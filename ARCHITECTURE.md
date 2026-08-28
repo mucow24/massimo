@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `4ecdb1a` (2026-08-27, #549) — verified against the live source.** This
+**Up to date as of commit `1d95319` (2026-08-27, #550) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -204,6 +204,8 @@ src/
 
   state/                        # Zustand stores (19 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~140 actions + migrateDoc
+                                #   (version-gated) + repairUngatedDocInvariants (the repairs no
+                                #   version gates, run from `merge` on EVERY rehydrate)
     history.ts                  # the ONLY module touching zundo internals
     renderDoc.ts                # useRenderDoc: the doc slice the canvas PAINTS from — mirrors
                                 #   useDoc at rest, serves the pipelined drag frame while armed
@@ -639,7 +641,11 @@ See [swatchRef.ts](src/model/swatchRef.ts).
   and size — Select Similar stands in for "stations of the same general purpose", which is what a
   stop type is. Deliberately NOT part of the match key (`stopsKey`, model/matching.ts): two
   stations that render alike still match while they disagree, which is what lets a broadcast bring
-  them into line.
+  them into line. Held to `STATION_STOP_TYPES` on both load paths (`sanitizeStopType`), a
+  non-member dropped rather than replaced. It fails from both ends at once if it isn't:
+  `stationIsSingleton` matches both declarations by NAME, so junk is no vote and the count answers
+  — the map styles correctly — while the picker matches the same value against its three options
+  and shows nothing selected, and nothing writes it back.
 - `circleId?` — binds the station onto a line circle's circumference (see Line circles below).
   Bound stations sit ON the circle, drag ALONG it (`moveStation` projects), and keep `rotation`
   at the nearest-octant tangent with the label held right-side-up (`uprightTangentRotation`,
@@ -1665,7 +1671,9 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
    alignment fields held to their ladders: the required `align`/`valign` take the historical
    `auto` / `auto-down` pair in place of a non-member — which is also what the legacy single
    `valign:'auto'` heals to, needing no arm of its own — while the optional `autoHAlign`/
-   `autoVAlign` are DROPPED instead, absent being their "auto") → `snapStationCells`
+   `autoVAlign` are DROPPED instead, absent being their "auto") → `sanitizeStopType` (the
+   station's own stored union held to `STATION_STOP_TYPES` the same way, dropped rather than
+   replaced — absent IS its `auto` rung) → `snapStationCells`
    (stop/label/anchor cells within 1e-9 of an integer snap
    onto it — the drift the old
    trig-rotated ghost lattice wrote; ±k·√2/2 and width-derived pitches are real coordinates and
@@ -1795,8 +1803,8 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
-| (not gated) | `sanitizeLabelAlignment` whenever `stations !== undefined` — each label's four alignment fields held to their ladders: the required `align`/`valign` take the historical `auto` / `auto-down` pair in place of a non-member, and the optional `autoHAlign`/`autoVAlign` are dropped instead (absent IS their "auto", so there is no member to replace with). Judged by MEMBERSHIP, so there is no version to gate on: nothing bumps a version when a stored union goes bad. The legacy single `valign:'auto'` (from before the `auto-up` mirror) is simply the best-known non-member and heals down the same path, which is why it has no gated row of its own |
-| (not gated) | `sanitizeLineCircles` whenever `stations` or `lineCircles` is present — the binding invariants (a `circleId` resolves, `viaCircle` only on bound stations, a bound station sits ON its circle). Runs right after the cell snap, since both repair stations. Guides need no twin: an `AlignmentGuide` references nothing, so `sanitizeGuides` is the file path's alone |
+| (not gated) | `sanitizeLabelAlignment` whenever `stations !== undefined` — each label's four alignment fields held to their ladders: the required `align`/`valign` take the historical `auto` / `auto-down` pair in place of a non-member, and the optional `autoHAlign`/`autoVAlign` are dropped instead (absent IS their "auto", so there is no member to replace with). Judged by MEMBERSHIP, so there is no version to gate on: nothing bumps a version when a stored union goes bad. The legacy single `valign:'auto'` (from before the `auto-up` mirror) is simply the best-known non-member and heals down the same path, which is why it has no gated row of its own. **But see the `merge` hook** |
+| (not gated) | `sanitizeLineCircles` whenever `stations` or `lineCircles` is present — the binding invariants (a `circleId` resolves, `viaCircle` only on bound stations, a bound station sits ON its circle). Runs right after the cell snap, since both repair stations. Guides need no twin: an `AlignmentGuide` references nothing, so `sanitizeGuides` is the file path's alone. **But see the `merge` hook** |
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 | (not gated) | `bakeConcreteDotSizes` whenever `lines !== undefined` — dot sizes are REQUIRED stored fields (absent used to mean "my dot type's natural diameter"); pin stops that tracked a different natural than their line's, then materialize the line split sizes. The v27 bump forced one pass over every pre-existing doc; a size-less line written at the current version (legacy clipboard paste) is healed by the **`merge` hook** |
 | (not gated) | `bakeTextLabelStyleLayout` whenever `styles !== undefined` — width/leading/tracking became covered textLabel style fields; a def predating the coverage backfills each missing field with the MOST COMMON of its wearers' effective values (auto/neutral when nobody wears it; ties keep the first-seen value), so nothing repaints and only wearers off the plurality read as per-field overrides. The v28 bump forces one pass; app-written defs are concrete, so no `merge`-hook membership is needed |
@@ -1806,27 +1814,44 @@ A **corrupt/missing version is treated as v0** (all migrations run). The nine no
 (`backfillLinesEdges`, `ensureStyleInvariants`, `sanitizeLabelAlignment`, `snapStationCells`,
 `sanitizeLineCircles`, `sanitizeImageHrefs`, `bakeConcreteDotSizes`, `bakeTextLabelStyleLayout`,
 `bakeLegacyUltraLightWeight`) are **not** tied to a schema bump — they run
-any time their field is present (an absent field is left for the persist-merge).
+any time their field is present (an absent field is left for the persist-merge). What GUARANTEES
+the must-always-hold ones is not this function but `repairUngatedDocInvariants`, below.
 `bakeActivePalettes`, which is gated, reads `useCustomPalettes.getState().palettes` to resolve
 legacy `custom:` ids — the only place in either load path that reaches into a store.
 
 > **`migrateDoc` does not run on every rehydrate** — zustand calls `migrate` only when the STORED
 > version DIFFERS from the config version. A doc stranded at 14 by that intermediate build is
 > already _at_ the version it claims, so it skips `migrateDoc` entirely, ungated repairs included,
-> and the renderer crashes on `ln.edges.join(...)`. That is why the persist config carries a custom
-> **`merge` hook** which runs the must-always-hold repairs — `backfillLinesEdges`,
-> `snapStationCells`, `sanitizeImageHrefs`, `dropEmptyPalettes`, `bakeConcreteDotSizes` and
-> `reconcileSwatchRefs` — **on every rehydrate**, whatever the version says.
-> `migrateDoc`'s own ungated calls cover the version-changed path; `merge` covers the rest. All
-> six are reference-stable on a canonical doc, so it still passes straight through the default
-> merge. `reconcileSwatchRefs` runs LAST there, over the whole merged doc, so it judges what the
-> repairs above just wrote; it is `migrateDoc`'s counterpart only in the sense that merge always
-> follows a migration, so the rehydrate path needs it in exactly one place. A must-always-hold
-> invariant belongs in that hook, **not** in the ungated block in `migrateDoc` alone. `snapStationCells` shows why the distinction is not academic: the docs
+> and the renderer crashes on `ln.edges.join(...)`. So a repair reachable only from `migrateDoc`
+> never sees a blob the current build wrote — which is every blob that matters — and the ungated
+> rows above are exactly the ones whose trigger no version tracks: nothing stamps a new version
+> when a stored union goes bad, a binding dangles, a style def turns to junk, or a legacy
+> clipboard payload is pasted verbatim.
+>
+> The must-always-hold set therefore has one home of its own, **`repairUngatedDocInvariants`**,
+> and the persist config's custom **`merge` hook** — which runs on EVERY rehydrate, whatever the
+> version says — is what calls it: `backfillLinesEdges`, `snapStationCells`,
+> `sanitizeLabelAlignment`, `sanitizeStopType`, `sanitizeLineCircles`, `ensureStyleInvariants`,
+> `sanitizeImageHrefs`, `dropEmptyPalettes` and `bakeConcreteDotSizes`. All are idempotent,
+> value-keyed and reference-stable on a canonical doc, so it still passes straight through the
+> default merge. One list rather than a subset picked out at the hook: a hand-copied subset is
+> how three of these came to be reachable from `migrate` alone. `migrateDoc` keeps its own calls
+> to most of them, because a version gate below the edge backfill or the style invariants reads
+> the shape they repair — running twice on that path costs nothing, which is why a rule new to
+> the list (`sanitizeStopType`) needs no `migrateDoc` row of its own.
+> `reconcileSwatchRefs` is the one that cannot join the list: refs live on polygons, labels,
+> transfers, dot shadows and style defs as well as lines, so the reconcile must judge the WHOLE
+> merged doc rather than the persisted half, and `merge` applies it last, over the result.
+> `snapStationCells` shows why the distinction is not academic: the docs
 > carrying cell drift were saved by the CURRENT build at the CURRENT version, so they are precisely
 > the ones `migrate` never sees — a remote image href is the same shape, and so is an empty
 > palette, which THIS build's editor mints into the doc and persists synchronously before the way
 > out takes it back.
+>
+> Two ungated `migrateDoc` rows deliberately stay out of the shared list. `bakeTextLabelStyleLayout`
+> reads as ungated but its trigger really was a one-time bump (v28) over pre-existing docs, and
+> app-written defs are concrete; `bakeLegacyUltraLightWeight` is keyed off a value nothing stores
+> any more. Neither is a rule a same-version doc can break.
 
 > **Do not "simplify" the two paths into one.** `storeMigrate.test.ts` pins reference-equality
 > pass-through for already-canonical docs (`expect(out).toBe(input)`); adding a file-only width
@@ -2746,7 +2771,8 @@ of them:
   line-bound route bullets. Modes `{line, equidistant, tens, all, grid}`. `equidistant` is
   engine-only and gated on `line`; `tens` ("Snap to grid length") notches the along-line cadence
   to a whole multiple of the **active grid size** from the prev-in-line neighbor (gated on `line`
-  here too — but the flag is now shared with the point snapper, below). Flow: pick a target pool → generate candidate
+  here too — but the flag is shared with the point snapper, below). Flow: pick a target pool →
+  generate candidate
   alignment pairs per target (line-mode requires a shared line + parallel travel dirs +
   adjacency; all-mode ignores topology; a stopless station participates via its anchor on
   either side; the pair's TARGET offset resolves through that station's frame — the ring's on a
@@ -4606,14 +4632,15 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   faces) — with a membership guard beside it: `isLineEndStyle`, `isTransferDrawOrder`,
   `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`,
   `isMapSort`, `isDayCanvasColor`, `isSidebarTab`, `isAllSnap`, `isGridSnap`, `isLabelAlign`,
-  `isLabelValign`, `isAutoHAlign`, `isAutoVAlign`, `isLabelWeight`.
-  The stored unions still outside the rule are `GuideOrientation`, `StopOrientation` and
-  `StationStopType`, whose gates spell their members out. The first two are backstopped by
+  `isLabelValign`, `isAutoHAlign`, `isAutoVAlign`, `isLabelWeight`, `isStationStopType`.
+  `STATION_STOP_TYPES` is the ladder with a rung the STORED field can never hold: `auto` is what
+  an absent `stopType` spells, so the load gate judges by `isStoredStopType` — the ladder minus
+  that rung, derived from it rather than re-spelt — and heals a non-member (a stored `'auto'`
+  included) by DROPPING the field, absent being the canonical way to say it.
+  The stored unions still outside the rule are `GuideOrientation` and `StopOrientation`, whose
+  gates spell their members out. Both are backstopped by
   `Record<Union, …>` tables elsewhere (`WELLS`/`MOVE_CURSOR`,
   `ORIENTATION_ANGLE`/`ORIENTATION_NAME`), so widening either still fails the build.
-  `StationStopType` has no such table — its only reader is `stationIsSingleton`, two `===` arms
-  over a fallthrough to the visible-stop heuristic — so a rung added there reads as `auto` and
-  stays invisible until someone notices the picker never offers it.
   **Every gate judges by the guard and every picker takes its order from the array**;
   no consumer re-spells the members, including the three gates that each judge stored values
   independently (both load paths and the clipboard's paste validator). The rule earns its keep
@@ -4650,7 +4677,7 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
   `TEXT_LABEL_ALIGN_CHIPS`, `LabelAlignButtons`'s four chip maps, each dialog's `SORT_LABELS`,
   the Map menu's `DAY_CANVAS_COLOR_LABELS`, the sidebar strip's `TAB_LABELS` and its
-  `tabCounts` sibling) or
+  `tabCounts` sibling, the station inspector's `STOP_TYPE_LABELS`) or
   `LINE_STYLE_TIE_RANK` — a member added
   to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind
   the type. A user-facing CYCLE is deliberately NOT derived from its ladder (`NEXT_STYLE`,
@@ -4658,7 +4685,7 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   The snap toolbar's two directional cycles are the case where that independence has to be
   policed rather than merely allowed. Their `states` arrays carry icons and tooltip prose the
   geometry layer has no business holding, so they stay hand-written — but they must still name
-  exactly `ALL_SNAPS`/`GRID_SNAPS`, because the ladder is now what the persist gate judges
+  exactly `ALL_SNAPS`/`GRID_SNAPS`, because the ladder is what the persist gate judges
   against: a rung the cycle omits is unreachable, and a state the cycle offers that the ladder
   lacks is worse and invisible in manual testing, since the click works and the next reload
   heals the value away. Neither list can derive the other, so `SnapToggleBar.test.tsx` walks the
@@ -4910,7 +4937,9 @@ Each is confirmed in source/tests; file pointers included.
   together (`StopGlyph.labelClearance.test.tsx`: the painted dot silhouette vs. the clearance
   `stopMetricsOf` reports for it).
 - **Integration** ([src/test/](src/test/)) — `App.smoke`, `App.keyboard` (the two-tier form
-  guard), `App.fontLoad`, `App.fontEpoch` (the whole app driven through a web-font arrival, with the
+  guard), `App.keyboard.guides` (the guide nudge and its visibility gating, driven through the
+  real app), `App.fontLoad`, `App.fontEpoch` (the whole app driven through a web-font arrival,
+  with the
   canvas metrics swapped underneath it, so station labels are proved to re-lay-out and not merely to
   drop their cache), `saveLoad` (round-trip through the real `pickDocSnapshot` path),
   `undoRedo` (value-restore, viewport-excluded-from-history, no-op equality, selection reconcile),

@@ -22,6 +22,7 @@ import {
   isLabelValign,
   isLabelWeight,
   isRouteBulletShape,
+  isStoredStopType,
   isTextLabelAlign,
   reconcileSwatchRefs,
   stationIsSingleton,
@@ -260,6 +261,48 @@ export function sanitizeLabelAlignment(stations: Record<string, Station>): {
     if (badAutoH) delete nextLabel.autoHAlign;
     if (badAutoV) delete nextLabel.autoVAlign;
     out[id] = { ...st, label: nextLabel };
+  }
+  return { stations: out, changed };
+}
+
+/**
+ * Hold every station's `stopType` to its ladder. A STORED string union that no
+ * schema bump ever touches, so — like the label alignments above — this is
+ * judged by MEMBERSHIP and runs UNGATED on both load paths.
+ *
+ * It heals by being DROPPED, because absent IS the 'auto' rung: there is no
+ * default member to replace a bad value with, and a stored 'auto' is itself
+ * non-canonical (`setStationStopType(id, 'auto')` deletes the key).
+ *
+ * Left standing, a non-member fails from both ends at once and looks like
+ * neither: `stationIsSingleton` matches the two declarations by NAME, so junk
+ * is no vote and the visible-stop count answers — the map is styled correctly —
+ * while the inspector's Stop type picker matches the same value against its
+ * three options and shows nothing selected. Nothing writes the value back, so
+ * the blank control survives every reload and every save.
+ *
+ * Reports `changed: false` and touches no station on a canonical doc, which the
+ * rehydrate path requires — its callers assign only on the flag, so the doc
+ * passes through by reference (see `repairUngatedDocInvariants`).
+ */
+export function sanitizeStopType(stations: Record<string, Station>): {
+  stations: Record<string, Station>;
+  changed: boolean;
+} {
+  let changed = false;
+  const out: Record<string, Station> = {};
+  for (const id of Object.keys(stations)) {
+    const st = stations[id];
+    // `in` rather than a bare read, so an explicit `stopType: undefined` is
+    // caught too: canonical form is the key ABSENT, and the delete is what puts
+    // it there.
+    if (!('stopType' in st) || isStoredStopType(st.stopType)) {
+      out[id] = st;
+      continue;
+    }
+    changed = true;
+    const { stopType: _dropped, ...rest } = st;
+    out[id] = rest;
   }
   return { stations: out, changed };
 }
@@ -769,6 +812,9 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   // see `sanitizeLabelAlignment`.
   const aligned = sanitizeLabelAlignment(merged.stations);
   if (aligned.changed) merged.stations = aligned.stations;
+  // Same standing for the station's own stored union — see `sanitizeStopType`.
+  const declared = sanitizeStopType(merged.stations);
+  if (declared.changed) merged.stations = declared.stations;
   // Pull cells that drifted off the integer lattice back onto it. Not gated on
   // the file version — see `snapStationCells`.
   const snapped = snapStationCells(merged.stations);

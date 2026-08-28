@@ -266,16 +266,22 @@ export function roundMeasurement(value: number): number {
   return Number(formatMeasurement(value));
 }
 
-/** An alignment guide as a snap target: a horizontal (constant-Y), vertical
- *  (constant-X), or 45° (constant-intercept) line at `offset`, infinite unless
- *  a bounded `extent` narrows it to a span (see AlignmentGuide.extent — same
- *  shape, same along-axis units). `AlignmentGuide` is structurally assignable;
- *  callers pass the visibility-gated, exclusion-filtered pool. */
-export interface GuideTarget {
-  id: string;
+/** A guide as a LINE: a horizontal (constant-Y), vertical (constant-X), or 45°
+ *  (constant-intercept) one at `offset`, infinite unless a bounded `extent`
+ *  narrows it to a span (see AlignmentGuide.extent — same shape, same
+ *  along-axis units). Deliberately id-less and structural, because the
+ *  measurement pools below are assembled on the fly from whatever the caller
+ *  can see and carry no ids; `AlignmentGuide` is assignable to it. */
+export interface GuideLine {
   orientation: GuideOrientation;
   offset: number;
   extent?: { center: number; halfLength: number };
+}
+
+/** A guide as a snap TARGET: the line plus the id a `SnapGuide` is credited to.
+ *  Callers pass the visibility-gated, exclusion-filtered pool. */
+export interface GuideTarget extends GuideLine {
+  id: string;
 }
 
 // ---------- Guide-line geometry ----------
@@ -426,12 +432,39 @@ export function guideEndAlong(
  *  shares: both snappers, the spacing readout and grid-length cadence below,
  *  and the locked deep-pick's point test (hitStack). Structural on purpose —
  *  readout/cadence pool entries carry no id. */
-export function guideAdmitsFoot(
-  g: { orientation: GuideOrientation; extent?: { center: number; halfLength: number } },
-  foot: Vec2,
-): boolean {
+export function guideAdmitsFoot(g: Pick<GuideLine, 'orientation' | 'extent'>, foot: Vec2): boolean {
   if (!g.extent) return true;
   return Math.abs(guideAlongOf(g.orientation, foot) - g.extent.center) <= g.extent.halfLength;
+}
+
+/**
+ * The offsets of every guide in `others` that can act as a PARALLEL NEIGHBOUR
+ * of a guide through `from`: same orientation, and — when bounded — with ink at
+ * `from`'s along-position (`guideAdmitsFoot` at its own foot there).
+ *
+ * The spacing readout and the `tens` cadence below both open by asking exactly
+ * this, of pools that differ only in what the caller put in them, and then do
+ * different arithmetic on the answer. Asking it in one place is what stops the
+ * two disagreeing about which guides are even THERE — a bounded parallel the
+ * readout measures to but the cadence steps past (or the reverse) would show
+ * the user a gap and a notch that contradict each other.
+ *
+ * Anything crossing the guide is excluded rather than ranked: the distance
+ * between two non-parallel lines is zero somewhere, so there is no one gap to
+ * name and nothing to step off.
+ */
+function parallelNeighbourOffsets(
+  orientation: GuideOrientation,
+  from: Vec2,
+  others: readonly GuideLine[],
+): number[] {
+  const out: number[] = [];
+  for (const o of others) {
+    if (o.orientation !== orientation) continue;
+    if (!guideAdmitsFoot(o, guideFoot(orientation, o.offset, from))) continue;
+    out.push(o.offset);
+  }
+  return out;
 }
 
 /** The guide's drawable segment clipped to a box (the overdrawn viewBox —
@@ -533,25 +566,18 @@ export function guideNeighbourReadout(
   orientation: GuideOrientation,
   offset: number,
   at: Vec2,
-  others: readonly {
-    orientation: GuideOrientation;
-    offset: number;
-    extent?: { center: number; halfLength: number };
-  }[],
+  others: readonly GuideLine[],
 ): SnapGuide[] {
   const from = guideFoot(orientation, offset, at);
   let below: number | null = null;
   let above: number | null = null;
-  for (const o of others) {
-    if (o.orientation !== orientation) continue;
-    // A bounded parallel with no ink at this along-position is not there.
-    if (!guideAdmitsFoot(o, guideFoot(orientation, o.offset, from))) continue;
+  for (const o of parallelNeighbourOffsets(orientation, from, others)) {
     // GRID_EPS as the "same coordinate" bar: two grid-snapped guides land on
     // bit-equal offsets, and a hair of FP drift below this is not a gap.
-    if (Math.abs(o.offset - offset) < GRID_EPS) return [];
-    if (o.offset < offset) {
-      if (below === null || o.offset > below) below = o.offset;
-    } else if (above === null || o.offset < above) above = o.offset;
+    if (Math.abs(o - offset) < GRID_EPS) return [];
+    if (o < offset) {
+      if (below === null || o > below) below = o;
+    } else if (above === null || o < above) above = o;
   }
   const out: SnapGuide[] = [];
   for (const n of [below, above]) {
@@ -598,22 +624,14 @@ export function guideTensOffset(
   orientation: GuideOrientation,
   offset: number,
   at: Vec2,
-  others: readonly {
-    orientation: GuideOrientation;
-    offset: number;
-    extent?: { center: number; halfLength: number };
-  }[],
+  others: readonly GuideLine[],
   gridInterval: number,
   tolerance: number,
 ): number | null {
   const from = guideFoot(orientation, offset, at);
   let anchor: number | null = null;
-  for (const o of others) {
-    if (o.orientation !== orientation) continue;
-    // A bounded parallel with no ink at this along-position anchors nothing.
-    if (!guideAdmitsFoot(o, guideFoot(orientation, o.offset, from))) continue;
-    if (anchor === null || Math.abs(o.offset - offset) < Math.abs(anchor - offset))
-      anchor = o.offset;
+  for (const o of parallelNeighbourOffsets(orientation, from, others)) {
+    if (anchor === null || Math.abs(o - offset) < Math.abs(anchor - offset)) anchor = o;
   }
   if (anchor === null) return null;
   const offsetPerUnit =

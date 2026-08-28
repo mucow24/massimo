@@ -300,11 +300,24 @@ describe('save/load round-trip', () => {
   // 'parse — retired segmentLayers strip'.
 });
 
-describe('localStorage rehydrate — line edge backfill', () => {
+// The repairs a doc stamped at the CURRENT persist version still needs. zustand
+// runs `migrate` only when the stored version DIFFERS from the configured one,
+// so every blob this build writes reaches the store through `merge` alone —
+// which is why each non-version-gated invariant has to be reachable from there.
+describe('localStorage rehydrate — the repairs a same-version doc still needs', () => {
   beforeEach(() => {
     localStorage.clear();
     useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   });
+
+  /** Seed a same-version blob carrying `state`, then rehydrate through it. */
+  const rehydrateAtCurrentVersion = async (state: Record<string, unknown>): Promise<void> => {
+    localStorage.setItem(
+      'vignelli-map-doc-v1',
+      JSON.stringify({ version: useDoc.persist.getOptions().version, state }),
+    );
+    await useDoc.persist.rehydrate();
+  };
 
   it('backfills edges when rehydrating a doc stranded at the current version with edge-less lines', async () => {
     // The exact shape an intermediate build persisted: stamped at the CURRENT
@@ -441,6 +454,91 @@ describe('localStorage rehydrate — line edge backfill', () => {
     // POLYGON to do it, which is the doc-wide half of this test.
     expect(P2.fill).toBe('#123456');
     expect('fillRef' in P2).toBe(false);
+  });
+
+  // The three below are the same argument as the three above, for the
+  // invariants `migrateDoc` declares NON-version-gated. Nothing bumps a version
+  // when a stored union goes bad, a binding dangles or a style def turns to
+  // junk, so the docs most likely to carry one are exactly the docs `migrate`
+  // never sees.
+  it('heals an off-ladder label valign when rehydrating a same-version doc', async () => {
+    await rehydrateAtCurrentVersion({
+      stations: {
+        s1: {
+          id: 's1',
+          name: 'Foo',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [],
+          // `labelLayout` resolves valign through a ladder of `===` arms, so a
+          // stray string lays the label out under an alignment nobody picked
+          // while the inspector's cluster shows no segment selected.
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'sideways' },
+        },
+      },
+    });
+
+    expect(useDoc.getState().stations.s1.label.valign).toBe('auto-down');
+  });
+
+  it('drops an off-ladder stopType when rehydrating a same-version doc', async () => {
+    await rehydrateAtCurrentVersion({
+      stations: {
+        s1: {
+          id: 's1',
+          name: 'Foo',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'auto-down' },
+          // Neither declaration, so the inspector's picker would show no
+          // choice selected while the dots style themselves off the count.
+          stopType: 'Interchange',
+        },
+      },
+    });
+
+    expect('stopType' in useDoc.getState().stations.s1).toBe(false);
+  });
+
+  it('drops a dangling circle binding when rehydrating a same-version doc', async () => {
+    await rehydrateAtCurrentVersion({
+      stations: {
+        s1: {
+          id: 's1',
+          name: 'Foo',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          // A `viaCircle` flag only ever lives on a BOUND station, and this
+          // one's binding names a circle the doc does not carry.
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical', viaCircle: true }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'auto-down' },
+          circleId: 'gone',
+        },
+      },
+      lineCircles: {},
+    });
+
+    const s1 = useDoc.getState().stations.s1;
+    expect('circleId' in s1).toBe(false);
+    expect('viaCircle' in s1.stops[0]).toBe(false);
+  });
+
+  it('drops an unusable style def when rehydrating a same-version doc', async () => {
+    await rehydrateAtCurrentVersion({
+      // `props` is a primitive: every reader downstream indexes into it, and
+      // `in` on a primitive throws — a white screen with no shell to catch it.
+      styles: { junk: { id: 'junk', kind: 'line', name: 'Junk', props: 5 } },
+      styleDefaults: { line: 'junk' },
+    });
+
+    const { styles, styleDefaults } = useDoc.getState();
+    expect(styles.junk).toBeUndefined();
+    // Every kind keeps a style, and its designated default resolves to one.
+    expect(styles[styleDefaults.line]?.kind).toBe('line');
   });
 });
 

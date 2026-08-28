@@ -53,6 +53,7 @@ import {
   sanitizeLineCircles,
   sanitizeLabelAlignment,
   sanitizeStations,
+  sanitizeStopType,
   snapStationCells,
   backfillLineNames,
   backfillLinesEdges,
@@ -344,9 +345,16 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Persisted-document version migration (v0 → v24). Exported and pure so it can
+ * Persisted-document version migration (v0 → v30). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
+ *
+ * zustand calls this ONLY when the stored version differs from the configured
+ * one, so nothing here is reached by a doc the current build wrote. Several
+ * steps below are marked "(ungated)" — they judge by membership or by shape,
+ * not by version, and run here because later version gates read what they
+ * repair. What guarantees them on every rehydrate is
+ * {@link repairUngatedDocInvariants}, reached from the `merge` hook.
  *
  * - v0 → v1: backfill `line.name` with `${service} line` for lines saved
  *   before the field existed.
@@ -359,11 +367,11 @@ if (typeof window !== 'undefined') {
  * - v2 → v3: translate legacy `labelBold: boolean` to `labelWeight:
  *   TextLabelWeight` (true → 700, false → 400). Matches `parse()`.
  * - (ungated) hold each station label's `align`/`valign` to its ladder,
- *   replacing a non-member with the historical `auto` / `auto-down` pair. Not
- *   version-gated: nothing bumps a version when a stored union goes bad, and a
- *   legacy `valign: 'auto'` (from before the `auto-up` mirror existed) is just
- *   the best-known non-member. Runs via `sanitizeLabelAlignment`, which
- *   `parse()` in serialize.ts also calls ungated for the file-import path.
+ *   replacing a non-member with the historical `auto` / `auto-down` pair.
+ *   Nothing bumps a version when a stored union goes bad, and a legacy
+ *   `valign: 'auto'` (from before the `auto-up` mirror existed) is just the
+ *   best-known non-member. Runs via `sanitizeLabelAlignment`, which `parse()`
+ *   in serialize.ts also calls ungated for the file-import path.
  * - v4 → v5: backfill polygon `darkFill`/`darkStroke` (equal to the light
  *   colors) for polygons saved before the dark-mode fields existed. Mirrors
  *   `backfillPolygonDarkColors` in `parse()`.
@@ -832,6 +840,99 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     out = bakeLineColorRefs({ ...out, palettes: dedupeSwatchNames(out.palettes) });
   }
   return out as DocState;
+}
+
+/**
+ * Every doc repair that NO schema version gates — the invariants a stored doc
+ * has to satisfy whatever version it was written at.
+ *
+ * They need a home of their own because `migrateDoc` is not one. zustand runs
+ * `migrate` only when the stored version DIFFERS from the configured one, so a
+ * repair reachable only from there never sees a blob written by the current
+ * build — which is every blob that matters. Each rule below fails for a reason
+ * no version bump tracks: nothing stamps a new version when a stored union goes
+ * bad, a binding dangles, a style def turns to junk, or a legacy clipboard
+ * payload is pasted verbatim. So the docs most likely to carry one are exactly
+ * the docs `migrate` skips, and `merge` — which runs on EVERY rehydrate — is
+ * what has to run them.
+ *
+ * `migrateDoc` keeps its own calls to most of these: a version gate below the
+ * edge backfill or the style invariants reads the shape they repair, so they
+ * cannot wait for a hook that runs after the whole chain. All of them are
+ * idempotent and value-keyed, so running twice on that path costs nothing —
+ * which is also why a repair NEW to this list (`sanitizeStopType`) needs no
+ * `migrateDoc` row of its own: nothing in the chain reads what it judges.
+ *
+ * Reference-stable: a canonical doc comes back as the SAME object, which is
+ * what lets `merge` spread it straight over `current`.
+ *
+ * `reconcileSwatchRefs` is deliberately NOT here — it is the one ungated repair
+ * that must judge the WHOLE merged doc rather than the persisted half, so
+ * `merge` applies it last, over the result of this.
+ */
+export function repairUngatedDocInvariants(doc: Partial<DocState>): Partial<DocState> {
+  const patch: Partial<DocState> = {};
+  if (doc.lines) {
+    const { lines, changed } = backfillLinesEdges(doc.lines);
+    if (changed) patch.lines = lines;
+  }
+  if (doc.stations) {
+    const { stations, changed } = snapStationCells(doc.stations);
+    if (changed) patch.stations = stations;
+  }
+  if (doc.stations) {
+    const { stations, changed } = sanitizeLabelAlignment(patch.stations ?? doc.stations);
+    if (changed) patch.stations = stations;
+  }
+  if (doc.stations) {
+    const { stations, changed } = sanitizeStopType(patch.stations ?? doc.stations);
+    if (changed) patch.stations = stations;
+  }
+  if (doc.stations || doc.lineCircles) {
+    const circles = sanitizeLineCircles(
+      doc.lineCircles ?? {},
+      patch.stations ?? doc.stations ?? {},
+    );
+    if (circles.changed) {
+      if (doc.lineCircles) patch.lineCircles = circles.lineCircles;
+      if (doc.stations) patch.stations = circles.stations;
+    }
+  }
+  if (doc.styles !== undefined) {
+    const inv = ensureStyleInvariants(doc.styles, doc.styleDefaults);
+    if (inv.changed) {
+      patch.styles = inv.styles;
+      patch.styleDefaults = inv.styleDefaults;
+    }
+  }
+  if (doc.svgImages) {
+    const hrefs = sanitizeImageHrefs(doc.svgImages, doc.backgroundOrder ?? []);
+    if (hrefs.changed) {
+      patch.svgImages = hrefs.svgImages;
+      if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
+    }
+  }
+  // A palette carries at least one color, and the palette editor mints an EMPTY
+  // one into the doc on the way in — provisional, and thrown away on the way
+  // out, but persisted synchronously in between.
+  if (doc.palettes) {
+    const kept = dropEmptyPalettes(doc.palettes);
+    if (kept !== doc.palettes) patch.palettes = kept;
+  }
+  // Dot sizes are required stored fields, and a size-less line can be written
+  // at the current version (a legacy clipboard payload pasted verbatim). Last
+  // of the record repairs, so it bakes what the ones above just wrote.
+  {
+    const baked = bakeConcreteDotSizes({
+      stations: patch.stations ?? doc.stations,
+      lines: patch.lines ?? doc.lines,
+    });
+    if (baked.lines && baked.lines !== (patch.lines ?? doc.lines)) patch.lines = baked.lines;
+    if (baked.stations && baked.stations !== (patch.stations ?? doc.stations)) {
+      patch.stations = baked.stations;
+    }
+  }
+  return Object.keys(patch).length === 0 ? doc : { ...doc, ...patch };
 }
 
 interface DocState extends MapDoc {
@@ -1610,69 +1711,22 @@ export const useDoc = create<DocState>()(
         // version — so a doc stranded at 14 (an intermediate build re-saved docs
         // at the bumped version BEFORE lines carried `edges`) skips migrateDoc's
         // unconditional edge backfill entirely, and the renderer crashes on
-        // `ln.edges.join(...)`. `merge` runs on EVERY rehydrate, so repair those
-        // invariants here too. Both are reference-stable on a canonical doc, so
-        // it passes straight through the default merge.
+        // `ln.edges.join(...)`. `merge` runs on EVERY rehydrate, so this is
+        // where the repairs no version gates have to stand — the whole list of
+        // them, in `repairUngatedDocInvariants`, rather than a subset picked
+        // out by hand here (which is how three of them came to be reachable
+        // only from `migrate`). Reference-stable on a canonical doc, so it
+        // passes straight through the default merge.
         //
-        // Cell-dust snapping needs `merge` for a sharper reason than `edges`
-        // does: the drift is still being carried by docs saved at the CURRENT
-        // version, which by definition never reach `migrate` at all. The image
-        // href guard is the same shape — a remote href could be persisted by
-        // any build, this one included — and so is the empty-palette drop,
-        // whose source is this build's own editor.
-        merge: (persisted, current) => {
-          const doc = (persisted ?? {}) as Partial<DocState>;
-          const patch: Partial<DocState> = {};
-          if (doc.lines) {
-            const { lines, changed } = backfillLinesEdges(doc.lines);
-            if (changed) patch.lines = lines;
-          }
-          if (doc.stations) {
-            const { stations, changed } = snapStationCells(doc.stations);
-            if (changed) patch.stations = stations;
-          }
-          if (doc.svgImages) {
-            const hrefs = sanitizeImageHrefs(doc.svgImages, doc.backgroundOrder ?? []);
-            if (hrefs.changed) {
-              patch.svgImages = hrefs.svgImages;
-              if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
-            }
-          }
-          // A palette carries at least one color, and the palette editor mints
-          // an EMPTY one into the doc on the way in — provisional, and thrown
-          // away on the way out, but persisted synchronously in between. Close
-          // the window there and the stub is written at the current version,
-          // which `migrate` never sees. Reference-stable, so a doc with none
-          // passes straight through.
-          if (doc.palettes) {
-            const kept = dropEmptyPalettes(doc.palettes);
-            if (kept !== doc.palettes) patch.palettes = kept;
-          }
-          // Dot sizes are required stored fields, and a size-less line can be
-          // written at the CURRENT version (a legacy clipboard payload pasted
-          // verbatim) — precisely the docs `migrate` never sees. Same shape as
-          // the cell-dust snap; reference-stable when everything is concrete.
-          {
-            const baked = bakeConcreteDotSizes({
-              stations: patch.stations ?? doc.stations,
-              lines: patch.lines ?? doc.lines,
-            });
-            if (baked.lines && baked.lines !== (patch.lines ?? doc.lines)) {
-              patch.lines = baked.lines;
-            }
-            if (baked.stations && baked.stations !== (patch.stations ?? doc.stations)) {
-              patch.stations = baked.stations;
-            }
-          }
-          // Swatch refs must agree with their palettes, and a same-version doc
-          // (hand-edited storage, or any state a bug lets slip) never reaches
-          // `migrate` — so the ref reconcile stands here too, over the WHOLE
-          // merged doc: refs live on polygons, labels, transfers, dot shadows
-          // and style defs as well as lines, and every one of them needs the
-          // repair. Last, so it judges what the repairs above just wrote.
-          // Reference-stable on a canonical doc, like every other repair here.
-          return T.reconcileSwatchRefs({ ...current, ...doc, ...patch });
-        },
+        // Swatch refs are the one that cannot live in that list: refs live on
+        // polygons, labels, transfers, dot shadows and style defs as well as
+        // lines, and the reconcile must judge the WHOLE merged doc rather than
+        // the persisted half. Last, so it sees what the repairs above wrote.
+        merge: (persisted, current) =>
+          T.reconcileSwatchRefs({
+            ...current,
+            ...repairUngatedDocInvariants((persisted ?? {}) as Partial<DocState>),
+          }),
         partialize: (s) => pickDocSnapshot(s),
       },
     ),
