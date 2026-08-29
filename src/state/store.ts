@@ -49,6 +49,7 @@ import {
 } from '../model/palettes';
 import { useCustomPalettes } from './customPalettes';
 import {
+  sanitizeGuides,
   sanitizeImageHrefs,
   sanitizeLineCircles,
   sanitizeLabelAlignment,
@@ -358,14 +359,15 @@ if (typeof window !== 'undefined') {
  *
  * - v0 → v1: backfill `line.name` with `${service} line` for lines saved
  *   before the field existed.
- * - v1 → v2: migrate legacy stop orientations (`up`/`down`/`left`/`right` and
- *   any unknown garbage strings) to the four canonical auto-* axes. Without
- *   this, docs saved before the diagonal-stops migration shipped carry
- *   orientation values that no longer have switch arms in travelDirLocal —
- *   crashing on render. Runs via `sanitizeStations`, which `parse()` in
- *   serialize.ts also calls for the file-import path.
  * - v2 → v3: translate legacy `labelBold: boolean` to `labelWeight:
  *   TextLabelWeight` (true → 700, false → 400). Matches `parse()`.
+ * - v3 → v4: migrate the legacy stop-orientation CARDINALS
+ *   (`up`/`down`/`left`/`right`) to the four canonical auto-* axes. Docs saved
+ *   before the diagonal-stops migration shipped carry orientation values that
+ *   no longer have switch arms in travelDirLocal — crashing on render. The
+ *   cardinals are what this gate is for; holding the field to the ladder at all
+ *   is judged by membership and belongs to every version, so `sanitizeStations`
+ *   ALSO runs ungated (see {@link repairUngatedDocInvariants}) and in `parse()`.
  * - (ungated) hold each station label's `align`/`valign` to its ladder,
  *   replacing a non-member with the historical `auto` / `auto-down` pair.
  *   Nothing bumps a version when a stored union goes bad, and a legacy
@@ -860,8 +862,12 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
  * edge backfill or the style invariants reads the shape they repair, so they
  * cannot wait for a hook that runs after the whole chain. All of them are
  * idempotent and value-keyed, so running twice on that path costs nothing —
- * which is also why a repair NEW to this list (`sanitizeStopType`) needs no
- * `migrateDoc` row of its own: nothing in the chain reads what it judges.
+ * which is also why a repair NEW to this list (`sanitizeStopType`,
+ * `sanitizeGuides`) needs no `migrateDoc` row of its own: nothing in the chain
+ * reads what it judges. `sanitizeStations` is the opposite case, and the reason
+ * a version gate is never enough on its own: it sits here AND under `v<4`,
+ * because the legacy cardinal names it translates there are a pre-v4 fact while
+ * the ladder it holds every stop to is a permanent one.
  *
  * Reference-stable: a canonical doc comes back as the SAME object, which is
  * what lets `merge` spread it straight over `current`.
@@ -877,7 +883,11 @@ export function repairUngatedDocInvariants(doc: Partial<DocState>): Partial<DocS
     if (changed) patch.lines = lines;
   }
   if (doc.stations) {
-    const { stations, changed } = snapStationCells(doc.stations);
+    const { stations, changed } = sanitizeStations(doc.stations);
+    if (changed) patch.stations = stations;
+  }
+  if (doc.stations) {
+    const { stations, changed } = snapStationCells(patch.stations ?? doc.stations);
     if (changed) patch.stations = stations;
   }
   if (doc.stations) {
@@ -897,6 +907,17 @@ export function repairUngatedDocInvariants(doc: Partial<DocState>): Partial<DocS
       if (doc.lineCircles) patch.lineCircles = circles.lineCircles;
       if (doc.stations) patch.stations = circles.stations;
     }
+  }
+  // A guide references nothing, so it needs none of the cross-collection
+  // repairs above — but its two required fields are a stored union and a stored
+  // number, and every `guide*` helper switches over the four orientations with
+  // no default arm. A non-member reaches the snapper as an `undefined` axis and
+  // throws out of the drag, while `guideSegmentInBox` gives the renderer nothing
+  // to draw — an invisible guide that crashes the app when a drag passes near
+  // where it would have been.
+  if (doc.guides) {
+    const { guides, changed } = sanitizeGuides(doc.guides);
+    if (changed) patch.guides = guides;
   }
   if (doc.styles !== undefined) {
     const inv = ensureStyleInvariants(doc.styles, doc.styleDefaults);

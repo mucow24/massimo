@@ -171,10 +171,16 @@ function migrateStopOrientation(o: unknown): StopOrientation {
   return 'auto-vertical';
 }
 
-// Re-apply the legacy-orientation migration to a stations dict. Used by
-// `parse()` (file-import path) and by the zustand persist `migrate` hook
-// (localStorage rehydration path) so legacy values from BOTH entry points
-// are normalized before any consumer reads them.
+// Hold every stop's orientation to the four canonical axes. Two jobs in one
+// pass, and only the first of them is a version's business: the cardinal names
+// are a pre-v4 vocabulary (hence the `v<4` gate in `migrateDoc`), while
+// MEMBERSHIP is a permanent invariant no schema bump tracks — a hand-edited or
+// foreign doc carries a stray string at any version. It is also the union with
+// the sharpest edge: `travelDirLocal` switches over the four axes with no
+// default arm, so a non-member is an `undefined` direction vector and the first
+// `.x` on it white-screens the canvas. Hence three entry points, only one of
+// them gated: `parse()` (file import), `migrateDoc`'s `v<4` gate, and
+// `repairUngatedDocInvariants` (every rehydrate).
 export function sanitizeStations(stations: Record<string, Station>): {
   stations: Record<string, Station>;
   changed: boolean;
@@ -404,13 +410,21 @@ export function sanitizeLineCircles(
 }
 
 /**
- * Alignment-guide hygiene for the file-import path. A guide is a few fields
- * with no cross-references, so unlike its ring sibling there are no bindings
- * to repair — a malformed entry (non-finite offset, unknown orientation) is
- * dropped, a malformed `extent` (non-finite scalars, or a span of zero — an
- * invisible, unhittable guide) is stripped back to the infinite form, and a
- * stored `locked: false` collapses to the omitted form (the canonical lock
- * convention). Idempotent; identity (same reference) on a well-formed record.
+ * Alignment-guide hygiene. A guide is a few fields with no cross-references, so
+ * unlike its ring sibling there are no bindings to repair — a malformed entry
+ * (non-finite offset, unknown orientation) is dropped, a malformed `extent`
+ * (non-finite scalars, or a span of zero — an invisible, unhittable guide) is
+ * stripped back to the infinite form, and a stored `locked: false` collapses to
+ * the omitted form (the canonical lock convention). Idempotent; identity (same
+ * reference) on a well-formed record.
+ *
+ * Referencing nothing buys it no version gate, though, and it is judged by
+ * MEMBERSHIP, so it runs UNGATED on BOTH load paths (`repairUngatedDocInvariants`
+ * is the rehydrate half). Every `guide*` helper in geometry/snap.ts switches
+ * over the four orientations with no default arm: a non-member reaches the
+ * snapper as an `undefined` axis and throws out of the drag, and
+ * `guideSegmentInBox` hands the renderer nothing to draw while it does — an
+ * invisible guide that crashes the app from where it isn't.
  */
 export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
   guides: Record<string, AlignmentGuide>;
