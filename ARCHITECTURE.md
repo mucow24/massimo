@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `1d95319` (2026-08-27, #550) — verified against the live source.** This
+**Up to date as of commit `9fc0130` (2026-08-28, #551) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -995,10 +995,15 @@ its whole edge band, corner squares included. Its popover is the one coordinate 
 for a diagonal) + a Length row — 2 × the half-length, an empty box under an ∞ placeholder while
 infinite (typing there commits on blur, centered on the viewport center's foot), with the ∞
 button as the way back — + lock/delete, lock protecting extent too
-([GuidePopover.tsx](src/components/GuidePopover.tsx)). `sanitizeGuides` (serialize.ts, the
-file-import path) drops malformed entries, strips a malformed extent (a non-object, non-finite
+([GuidePopover.tsx](src/components/GuidePopover.tsx)). `sanitizeGuides` (serialize.ts, on BOTH
+load paths) drops malformed entries, strips a malformed extent (a non-object, non-finite
 scalars, or a zero-or-negative span — an invisible, unhittable guide) back to the infinite
-form, and collapses a stored `locked: false`; there are no cross-references to repair.
+form, and collapses a stored `locked: false`; there are no cross-references to repair, but the
+two required fields are a stored union and a stored number, and the `guide*` helpers switch over
+the four orientations with no default arm — a non-member reaches the snapper as an `undefined`
+axis and throws out of the drag, while `guideSegmentInBox` hands the renderer nothing to draw.
+An invisible guide that crashes the app from where it isn't, which is why it is one of the
+must-always-hold repairs rather than the file path's alone.
 
 **`LabelCell`** — the station name's grid cell + placement. `row, col, rotation: Rotation`,
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat
@@ -1706,7 +1711,8 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
    dangling `circleId`s and orphaned `viaCircle` flags, reproject drifted bound stations; it
    repairs STATIONS as well as circles, which is why it sits after the station passes), then
    `sanitizeGuides` (drop malformed guides, collapse a stored `locked: false`; an
-   `AlignmentGuide` references nothing, so this one has no rehydrate twin), then
+   `AlignmentGuide` references nothing, but its orientation is a stored union with no
+   default arm downstream, so it has a rehydrate twin like the rest), then
    `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
    lines: dangling line ids drop the assignment, dangling pairKey anchors survive for reconcile).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
@@ -1776,7 +1782,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `v<1`       | `backfillLineNames` (`"${service} line"`)                                                                                                  |
 | `v<3`       | `labelBold:boolean` → `labelWeight` (700/400; explicit weight wins)                                                                        |
-| `v<4`       | `sanitizeStations` (legacy stop orientations)                                                                                              |
+| `v<4`       | `sanitizeStations` for the legacy CARDINALS (`up`/`down`/`left`/`right` → the auto-\* axes). Holding the field to the ladder at all is judged by membership and belongs to every version, so the same call runs ungated too — **see the `merge` hook** |
 | `v<5`       | `backfillPolygonDarkColors`                                                                                                                |
 | `v<6`       | `backfillTextLabelColors`                                                                                                                  |
 | `v<7`       | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`)                                                                              |
@@ -1804,7 +1810,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
 | (not gated) | `sanitizeLabelAlignment` whenever `stations !== undefined` — each label's four alignment fields held to their ladders: the required `align`/`valign` take the historical `auto` / `auto-down` pair in place of a non-member, and the optional `autoHAlign`/`autoVAlign` are dropped instead (absent IS their "auto", so there is no member to replace with). Judged by MEMBERSHIP, so there is no version to gate on: nothing bumps a version when a stored union goes bad. The legacy single `valign:'auto'` (from before the `auto-up` mirror) is simply the best-known non-member and heals down the same path, which is why it has no gated row of its own. **But see the `merge` hook** |
-| (not gated) | `sanitizeLineCircles` whenever `stations` or `lineCircles` is present — the binding invariants (a `circleId` resolves, `viaCircle` only on bound stations, a bound station sits ON its circle). Runs right after the cell snap, since both repair stations. Guides need no twin: an `AlignmentGuide` references nothing, so `sanitizeGuides` is the file path's alone. **But see the `merge` hook** |
+| (not gated) | `sanitizeLineCircles` whenever `stations` or `lineCircles` is present — the binding invariants (a `circleId` resolves, `viaCircle` only on bound stations, a bound station sits ON its circle). Runs right after the cell snap, since both repair stations. **But see the `merge` hook** |
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 | (not gated) | `bakeConcreteDotSizes` whenever `lines !== undefined` — dot sizes are REQUIRED stored fields (absent used to mean "my dot type's natural diameter"); pin stops that tracked a different natural than their line's, then materialize the line split sizes. The v27 bump forced one pass over every pre-existing doc; a size-less line written at the current version (legacy clipboard paste) is healed by the **`merge` hook** |
 | (not gated) | `bakeTextLabelStyleLayout` whenever `styles !== undefined` — width/leading/tracking became covered textLabel style fields; a def predating the coverage backfills each missing field with the MOST COMMON of its wearers' effective values (auto/neutral when nobody wears it; ties keep the first-seen value), so nothing repaints and only wearers off the plurality read as per-field overrides. The v28 bump forces one pass; app-written defs are concrete, so no `merge`-hook membership is needed |
@@ -1830,15 +1836,22 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
 >
 > The must-always-hold set therefore has one home of its own, **`repairUngatedDocInvariants`**,
 > and the persist config's custom **`merge` hook** — which runs on EVERY rehydrate, whatever the
-> version says — is what calls it: `backfillLinesEdges`, `snapStationCells`,
-> `sanitizeLabelAlignment`, `sanitizeStopType`, `sanitizeLineCircles`, `ensureStyleInvariants`,
-> `sanitizeImageHrefs`, `dropEmptyPalettes` and `bakeConcreteDotSizes`. All are idempotent,
-> value-keyed and reference-stable on a canonical doc, so it still passes straight through the
-> default merge. One list rather than a subset picked out at the hook: a hand-copied subset is
+> version says — is what calls it: `backfillLinesEdges`, `sanitizeStations`, `snapStationCells`,
+> `sanitizeLabelAlignment`, `sanitizeStopType`, `sanitizeLineCircles`, `sanitizeGuides`,
+> `ensureStyleInvariants`, `sanitizeImageHrefs`, `dropEmptyPalettes` and `bakeConcreteDotSizes`.
+> All are idempotent, value-keyed and reference-stable on a canonical doc, so it still passes
+> straight through the default merge. One list rather than a subset picked out at the hook: a hand-copied subset is
 > how three of these came to be reachable from `migrate` alone. `migrateDoc` keeps its own calls
 > to most of them, because a version gate below the edge backfill or the style invariants reads
 > the shape they repair — running twice on that path costs nothing, which is why a rule new to
-> the list (`sanitizeStopType`) needs no `migrateDoc` row of its own.
+> the list (`sanitizeStopType`, `sanitizeGuides`) needs no `migrateDoc` row of its own.
+> `sanitizeStations` is the shape that shows why a version gate is never the whole answer, and
+> the only member here that also holds a gated row: the legacy CARDINALS it translates are a
+> pre-v4 fact, while the ladder it holds every stop to is judged by membership and belongs to
+> every version. A stop orientation and a guide orientation are the two unions with no safe
+> landing — `travelDirLocal` and the `guide*` helpers switch over their four rungs with no
+> default arm, so a non-member is an `undefined` vector and the first `.x` on it takes the app
+> down — and a bad guide does it INVISIBLY, `guideSegmentInBox` having nothing to draw.
 > `reconcileSwatchRefs` is the one that cannot join the list: refs live on polygons, labels,
 > transfers, dot shadows and style defs as well as lines, so the reconcile must judge the WHOLE
 > merged doc rather than the persisted half, and `merge` applies it last, over the result.

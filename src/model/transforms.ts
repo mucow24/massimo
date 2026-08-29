@@ -655,8 +655,10 @@ export function stationIsSingleton(station: Station | undefined): boolean {
 // union, so a rung added here without a name for it fails to compile.
 export const STATION_STOP_TYPES: readonly StationStopType[] = ['auto', 'singleton', 'interchange'];
 
-/** Is `v` one of the Stop type picker's choices? */
-export const isStationStopType = (v: unknown): v is StationStopType =>
+/** Is `v` one of the Stop type picker's choices? Module-private: the ladder
+ *  itself is what the picker reads, and `isStoredStopType` — its one caller —
+ *  is what every judge of the stored field goes through. */
+const isStationStopType = (v: unknown): v is StationStopType =>
   typeof v === 'string' && (STATION_STOP_TYPES as readonly string[]).includes(v);
 
 /**
@@ -789,7 +791,7 @@ function dropRedundantStopOverrides(
     const stops = st.stops.map((s) => {
       if (s.lineId !== lineId || !isRedundant(s, st)) return s;
       stopsChanged = true;
-      // Spread + delete, the same reason as `writeTransferField`: TS can't
+      // Spread + delete, the same reason as `withTransferOverride`: TS can't
       // prove the destructuring omit keeps StopCell's required fields.
       const rest = { ...s };
       for (const f of fields) delete rest[f];

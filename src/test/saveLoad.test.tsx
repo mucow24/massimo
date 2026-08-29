@@ -503,6 +503,52 @@ describe('localStorage rehydrate — the repairs a same-version doc still needs'
     expect('stopType' in useDoc.getState().stations.s1).toBe(false);
   });
 
+  it('heals an off-ladder stop orientation when rehydrating a same-version doc', async () => {
+    await rehydrateAtCurrentVersion({
+      stations: {
+        s1: {
+          id: 's1',
+          name: 'Foo',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          // The stored union with the sharpest edge of the lot: every reader
+          // goes through `travelDirLocal`, a switch over the four axes with no
+          // default arm, so a non-member returns `undefined` and the first
+          // `.x` on it white-screens the canvas. Reachable at ANY version —
+          // membership is not something a schema bump tracks — but `migrateDoc`
+          // only heals it under the `v<4` legacy-cardinals gate.
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'sideways' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'auto-down' },
+        },
+      },
+    });
+
+    expect(useDoc.getState().stations.s1.stops[0].orientation).toBe('auto-vertical');
+  });
+
+  it('drops a malformed guide when rehydrating a same-version doc', async () => {
+    await rehydrateAtCurrentVersion({
+      guides: {
+        // Same shape of failure as the stop orientation above, one collection
+        // over: `guideAxis` and its `guide*` siblings switch over the four
+        // orientations with no default, so a non-member reaches the snapper as
+        // an `undefined` axis and throws out of the drag. It is INVISIBLE while
+        // it does it — `guideSegmentInBox` returns nothing to draw — so the
+        // crash has no on-screen cause.
+        g1: { id: 'g1', orientation: 'sideways', offset: 40 },
+        // The offset is a stored number with the same standing: a non-finite
+        // one poisons every distance the snapper ranks candidates by, and
+        // `null` is exactly how JSON spells the one a save wrote.
+        g2: { id: 'g2', orientation: 'horizontal', offset: null },
+        g3: { id: 'g3', orientation: 'vertical', offset: 20 },
+      },
+    });
+
+    const { guides } = useDoc.getState();
+    expect(Object.keys(guides)).toEqual(['g3']);
+  });
+
   it('drops a dangling circle binding when rehydrating a same-version doc', async () => {
     await rehydrateAtCurrentVersion({
       stations: {
