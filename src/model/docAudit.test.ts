@@ -221,7 +221,7 @@ describe('auditDoc', () => {
     [
       'non-finite station position',
       (d) => (d.stations.s1 = { ...d.stations.s1, x: Number.NaN }),
-      /non-finite position/,
+      /station "s1": non-finite x/,
     ],
     [
       'stop for a line that is gone',
@@ -341,6 +341,29 @@ describe('auditDoc', () => {
         }),
       /dangling cover line "ghost"/,
     ],
+    [
+      'two palettes under one name',
+      (d) =>
+        (d.palettes = [
+          { name: 'Twice', swatches: [{ name: 'a', color: '#000000' }] },
+          { name: 'Twice', swatches: [{ name: 'a', color: '#ffffff' }] },
+        ]),
+      /palette "Twice": name is not unique/,
+    ],
+    [
+      'two swatches under one name in a palette',
+      (d) =>
+        (d.palettes = [
+          {
+            name: 'P',
+            swatches: [
+              { name: 'a', color: '#000000' },
+              { name: 'a', color: '#ffffff' },
+            ],
+          },
+        ]),
+      /palette "P": swatch name "a" is not unique/,
+    ],
   ];
   for (const [label, corrupt, pattern] of cases) {
     it(`flags: ${label}`, () => {
@@ -351,6 +374,141 @@ describe('auditDoc', () => {
       expect(violations.join('\n')).toMatch(pattern);
     });
   }
+
+  /**
+   * Non-finite SUBSTANCE — the numbers without which a record describes
+   * nothing. The load path drops the record outright for each of these (step
+   * 6c: "every decoration whose references or required numbers can't be
+   * honoured"), which is what makes an NaN reaching one from inside the app a
+   * writer bug of exactly the same standing as a dangling id: the item stops
+   * rendering where it stands, and the only thing that clears it is a
+   * save-then-load that DELETES the user's item. The audit used to ask this of
+   * `stations` alone.
+   */
+  const nonFinite: Array<[string, (doc: MapDoc) => void, RegExp]> = [
+    ['station', (d) => (d.stations.s1 = { ...d.stations.s1, y: Number.NaN }), /station "s1"/],
+    [
+      'free transfer anchor',
+      (d) => (d.transferAnchors = { fa1: { id: 'fa1', x: 0, y: Number.NaN } }),
+      /transferAnchor "fa1"/,
+    ],
+    [
+      'line tag',
+      (d) => (d.lineTags = { t1: makeLineTag({ id: 't1', distance: Number.NaN }) }),
+      /lineTag "t1"/,
+    ],
+    [
+      'route bullet',
+      (d) => (d.routeBullets = { rb1: makeRouteBullet({ id: 'rb1', size: Number.NaN }) }),
+      /routeBullet "rb1"/,
+    ],
+    [
+      'text label',
+      (d) => (d.textLabels = { g1: makeTextLabel({ id: 'g1', fontSize: Number.NaN }) }),
+      /textLabel "g1"/,
+    ],
+    [
+      'svg image',
+      (d) => (d.svgImages = { im1: makeSvgImage({ id: 'im1', width: Number.NaN }) }),
+      /svgImage "im1"/,
+    ],
+    [
+      'line circle',
+      (d) => (d.lineCircles = { lc1: makeLineCircle({ id: 'lc1', radius: Number.NaN }) }),
+      /lineCircle "lc1"/,
+    ],
+    [
+      'guide',
+      (d) => (d.guides = { gd1: makeGuide({ id: 'gd1', offset: Number.NaN }) }),
+      /guide "gd1"/,
+    ],
+    [
+      'polygon vertex',
+      (d) =>
+        (d.polygons = {
+          pg1: makePolygon({
+            id: 'pg1',
+            vertices: [
+              { x: 0, y: 0 },
+              { x: 10, y: Number.NaN },
+            ],
+          }),
+        }),
+      /polygon "pg1"/,
+    ],
+    [
+      'polygon stroke width',
+      (d) => (d.polygons = { pg1: makePolygon({ id: 'pg1', strokeWidth: Number.NaN }) }),
+      /polygon "pg1"/,
+    ],
+  ];
+  for (const [label, corrupt, pattern] of nonFinite) {
+    it(`flags non-finite substance: ${label}`, () => {
+      const doc = cleanDoc();
+      corrupt(doc);
+      const violations = auditDoc(doc);
+      expect(violations.join('\n')).toMatch(pattern);
+      expect(violations.join('\n')).toMatch(/non-finite/);
+    });
+  }
+
+  /**
+   * Swatch refs. A ref is a REFERENCE — `MapDoc.palettes` is name-keyed, and
+   * `reconcileSwatchRefs` drops every ref that stops resolving on BOTH load
+   * doors. So a ref left dangling by a writer is the cruellest of these bugs:
+   * the color it painted stays put, the link silently evaporates on the next
+   * load, and the only symptom is a Reset/Sync that stops doing anything, days
+   * later, with nothing to point at. The audit reads the refs off the SAME
+   * traversal the reconcile rewrites them through, so a new ref home is
+   * audited the day it is added.
+   */
+  const linkedLine = (ref: { palette: string; swatch: string }): MapDoc => {
+    const doc = cleanDoc();
+    doc.lines.l1 = { ...doc.lines.l1, colorRef: ref };
+    return doc;
+  };
+
+  it('a resolvable line ref is not a violation', () => {
+    expect(auditDoc(linkedLine({ palette: 'MTA', swatch: 'Blue (A·C·E)' }))).toEqual([]);
+  });
+
+  it('flags a ref into a palette the map no longer carries', () => {
+    const v = auditDoc(linkedLine({ palette: 'Gone', swatch: 'Blue (A·C·E)' }));
+    expect(v.join('\n')).toMatch(/swatch ref "Gone"\/"Blue \(A·C·E\)": does not resolve/);
+  });
+
+  it('flags a ref into a swatch that palette no longer carries', () => {
+    const v = auditDoc(linkedLine({ palette: 'MTA', swatch: 'Ghost' }));
+    expect(v.join('\n')).toMatch(/swatch ref "MTA"\/"Ghost": does not resolve/);
+  });
+
+  // Kind is half of resolution: a LINE ref resolves against line palettes and
+  // a DESIGN ref against design ones, so a ref across the divide resolves to
+  // nothing exactly as if the palette were gone — and the reconcile drops it.
+  it('flags a design ref pointed at a LINE palette', () => {
+    const doc = cleanDoc();
+    doc.textLabels = {
+      g1: makeTextLabel({ id: 'g1', colorRef: { palette: 'MTA', swatch: 'Blue (A·C·E)' } }),
+    };
+    expect(auditDoc(doc).join('\n')).toMatch(
+      /swatch ref "MTA"\/"Blue \(A·C·E\)": does not resolve/,
+    );
+  });
+
+  // The refs live in a dozen homes across items and style defs; the audit
+  // must reach the style-def half too, not just the items.
+  it('flags a dangling ref inside a style def', () => {
+    const doc = cleanDoc();
+    const def = doc.styles[doc.styleDefaults.line];
+    doc.styles = {
+      ...doc.styles,
+      [def.id]: {
+        ...def,
+        props: { ...def.props, strokeColorRef: { palette: 'Gone', swatch: 'x' } },
+      },
+    } as MapDoc['styles'];
+    expect(auditDoc(doc).join('\n')).toMatch(/swatch ref "Gone"\/"x": does not resolve/);
+  });
 
   it('parse() output audits clean, even for heavily broken input', () => {
     // The repaired form of a generator-broken file must satisfy the same

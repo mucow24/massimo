@@ -1,5 +1,8 @@
 import { edgeEndpoints } from './lineTopology';
 import { pairKeyOf } from './pairKey';
+import { collectSwatchRefs } from './transforms';
+import { endStationId, isFreeAnchorEnd, isHostedAnchorEnd } from './transferAnchors';
+import { isSwatchRef, resolveDesignSwatchRef, resolveLineSwatchRef } from './swatchRef';
 import type { MapDoc, StyleKind } from './types';
 
 // Every keyed collection whose records carry their own `id`, with the noun a
@@ -28,6 +31,25 @@ const ID_KEYED_COLLECTIONS: ReadonlyArray<[keyof MapDoc, string]> = [
   ['lineCircles', 'lineCircle'],
   ['guides', 'guide'],
   ['styles', 'style'],
+];
+
+// The numeric SUBSTANCE of a record, per collection: the fields the import
+// path refuses to accept a non-finite value in, because no faithful repair
+// exists — it drops the whole record (`sanitizeDocReferences`, and
+// `sanitizeLineCircles`/`sanitizeGuides` for the last two). That is what puts
+// an NaN arriving from inside the app on the same footing as a dangling id:
+// the item stops rendering where it stands, and the only thing that clears it
+// is a save-then-load that DELETES the user's work. `polygons` is absent here
+// because its substance is an array of vertices, audited on its own below.
+const FINITE_FIELDS: ReadonlyArray<[keyof MapDoc, string, readonly string[]]> = [
+  ['stations', 'station', ['x', 'y']],
+  ['transferAnchors', 'transferAnchor', ['x', 'y']],
+  ['lineTags', 'lineTag', ['distance']],
+  ['routeBullets', 'routeBullet', ['x', 'y', 'size']],
+  ['textLabels', 'textLabel', ['x', 'y', 'fontSize']],
+  ['svgImages', 'svgImage', ['x', 'y', 'width', 'height', 'rotation']],
+  ['lineCircles', 'lineCircle', ['x', 'y', 'radius']],
+  ['guides', 'guide', ['offset']],
 ];
 
 // Which style kind each tagged collection's `styleId` must name. stopDot is
@@ -67,8 +89,25 @@ export function auditDoc(doc: MapDoc): string[] {
     }
   }
 
+  for (const [collection, noun, fields] of FINITE_FIELDS) {
+    const records = doc[collection] as Record<string, Record<string, unknown>>;
+    for (const [key, item] of Object.entries(records)) {
+      for (const f of fields) {
+        if (!finite(item[f])) v.push(`${noun} "${key}": non-finite ${f}`);
+      }
+    }
+  }
+
+  // A polygon's substance is its outline: two finite vertices at the least
+  // (one point is not a shape), plus the stroke width the renderer paints by.
+  for (const [key, p] of Object.entries(doc.polygons)) {
+    if (p.vertices.length < 2) v.push(`polygon "${key}": fewer than two vertices`);
+    if (p.vertices.some((pt) => !finite(pt.x) || !finite(pt.y)))
+      v.push(`polygon "${key}": non-finite vertex`);
+    if (!finite(p.strokeWidth)) v.push(`polygon "${key}": non-finite strokeWidth`);
+  }
+
   for (const [key, st] of Object.entries(doc.stations)) {
-    if (!finite(st.x) || !finite(st.y)) v.push(`station "${key}": non-finite position`);
     if (st.circleId !== undefined && !doc.lineCircles[st.circleId])
       v.push(`station "${key}": dangling circleId "${st.circleId}"`);
     const seen = new Set<string>();
@@ -147,19 +186,27 @@ export function auditDoc(doc: MapDoc): string[] {
       v.push(`lineTag "${key}": pair is not an edge of "${t.lineId}"`);
   }
 
+  // Narrowed through transferAnchors.ts, never by a bare `in` test: two of the
+  // three arms carry a stationId, so an if-chain that leads with one is right
+  // only by where it sits — which is the single easiest thing to get wrong
+  // about this union, and why the guards exist. `endStationId` is the "both
+  // station-keyed arms" question the station check actually wants; the three
+  // arms then part company over which id each one still has to resolve.
   for (const [key, t] of Object.entries(doc.transfers)) {
     for (const end of [t.a, t.b]) {
-      if ('stationId' in end) {
-        if (!doc.stations[end.stationId]) {
-          v.push(`transfer "${key}": dangling station "${end.stationId}"`);
-        } else if ('anchorId' in end) {
-          if (!doc.stations[end.stationId].transferAnchors?.some((a) => a.id === end.anchorId))
-            v.push(`transfer "${key}": dangling hosted anchor "${end.anchorId}"`);
-        } else if (end.lineId !== null && !doc.lines[end.lineId]) {
-          v.push(`transfer "${key}": dangling line "${end.lineId}"`);
-        }
-      } else if (!doc.transferAnchors[end.anchorId]) {
-        v.push(`transfer "${key}": dangling free anchor "${end.anchorId}"`);
+      const stationId = endStationId(end);
+      if (stationId !== null && !doc.stations[stationId]) {
+        v.push(`transfer "${key}": dangling station "${stationId}"`);
+        continue;
+      }
+      if (isHostedAnchorEnd(end)) {
+        if (!doc.stations[end.stationId].transferAnchors?.some((a) => a.id === end.anchorId))
+          v.push(`transfer "${key}": dangling hosted anchor "${end.anchorId}"`);
+      } else if (isFreeAnchorEnd(end)) {
+        if (!doc.transferAnchors[end.anchorId])
+          v.push(`transfer "${key}": dangling free anchor "${end.anchorId}"`);
+      } else if (end.lineId !== null && !doc.lines[end.lineId]) {
+        v.push(`transfer "${key}": dangling line "${end.lineId}"`);
       }
     }
   }
@@ -187,6 +234,49 @@ export function auditDoc(doc: MapDoc): string[] {
       if (item.styleId !== undefined && doc.styles[item.styleId]?.kind !== kind)
         v.push(`${String(collection)} "${key}": styleId "${item.styleId}" is not a ${kind} style`);
     }
+  }
+
+  // Palettes are the one doc collection keyed by NAME rather than by a record
+  // key, and those names are what every SwatchRef resolves through — two
+  // palettes (or two swatches within one) under one name is the same violation
+  // as an `id` disagreeing with its key, and the load path drops the second of
+  // each for exactly that reason. Whether a palette carries any color is NOT
+  // audited: an empty one is canonicality (`dropEmptyPalettes`' business), not
+  // a reference anything else in the doc can be pointing at.
+  {
+    const paletteNames = new Set<string>();
+    for (const p of doc.palettes) {
+      if (paletteNames.has(p.name)) v.push(`palette "${p.name}": name is not unique`);
+      paletteNames.add(p.name);
+      const swatchNames = new Set<string>();
+      for (const s of p.swatches) {
+        if (swatchNames.has(s.name))
+          v.push(`palette "${p.name}": swatch name "${s.name}" is not unique`);
+        swatchNames.add(s.name);
+      }
+    }
+  }
+
+  // Swatch refs: a link into `doc.palettes`, and the last reference class in
+  // the doc that lives outside a keyed collection. `reconcileSwatchRefs` drops
+  // every one that stops resolving on BOTH load doors, so a writer that leaves
+  // one dangling ships a doc whose link silently evaporates on the next load —
+  // the color it painted stays, so the only symptom is a palette Reset/Sync
+  // that quietly stops doing anything. Read off the reconcile's own traversal
+  // (`collectSwatchRefs`) rather than a second list of homes: the slot table is
+  // where a ref home is added, and a home the audit cannot see is a home the
+  // export door stops guarding. Duplicates collapse — a dozen homes wearing one
+  // broken link is one thing to report.
+  {
+    const broken = new Set<string>();
+    for (const { ref, linePalette } of collectSwatchRefs(doc)) {
+      const resolve = linePalette ? resolveLineSwatchRef : resolveDesignSwatchRef;
+      // Kind is half of resolution: a design ref naming a line palette resolves
+      // to nothing, exactly as if the palette were gone.
+      if (isSwatchRef(ref) && resolve(doc.palettes, ref)) continue;
+      broken.add(isSwatchRef(ref) ? `"${ref.palette}"/"${ref.swatch}"` : JSON.stringify(ref));
+    }
+    for (const label of broken) v.push(`swatch ref ${label}: does not resolve`);
   }
 
   return v;
