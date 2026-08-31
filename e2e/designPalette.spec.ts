@@ -229,3 +229,83 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
   await expect(fillTrigger).toHaveText('Signal');
   await expect(page.getByRole('button', { name: /^Reset fill/ })).toHaveCount(0);
 });
+
+// The palette-color menu is as long as the map's design palettes are, and only
+// its swatch list may scroll — the foot (Custom / Save color to palette) has to
+// stay on screen however many swatches sit above it. This is a LAYOUT fact
+// jsdom cannot see: the scroll depends on the whole flex chain from the capped
+// panel down to `.palette-color-scroll`, and one unshrinkable div in the middle
+// silently turns the cap into overflow that runs off the window.
+test('a long swatch list scrolls inside the palette-color menu, foot rows reachable', async ({
+  page,
+}) => {
+  await seedAndOpen(page, {
+    stations: [],
+    lines: [],
+    palettes: [
+      {
+        name: 'Big',
+        kind: 'design',
+        // Enough rows to overflow the 720px viewport more than twice over.
+        swatches: Array.from({ length: 40 }, (_, i) => ({
+          name: `C${i + 1}`,
+          color: `#0000${(17 * (i % 15)).toString(16).padStart(2, '0')}`,
+        })),
+      },
+      // Enough palettes that the Save flyout overflows the window too.
+      ...Array.from({ length: 30 }, (_, i) => ({
+        name: `P${i + 1}`,
+        kind: 'design' as const,
+        swatches: [{ name: '1', color: '#446688' }],
+      })),
+    ],
+  });
+
+  // A polygon's popover carries the Fill palette dropdown.
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Polygon', exact: true }).click();
+  await page.mouse.click(CENTER.x, CENTER.y);
+  await expect(page.locator('.polygon-popover')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Fill color palette color' }).click();
+
+  // The panel is capped to the window: the foot's Save row sits inside it.
+  const save = page.getByRole('menuitem', { name: 'Save color to palette' });
+  await expect(save).toBeVisible();
+  const box = (await save.boundingBox())!;
+  expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+  // And the cap turned into a real scroll on the swatch list, not a clip.
+  const scroll = await page
+    .locator('.palette-color-scroll')
+    .evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }));
+  expect(scroll.clientHeight).toBeGreaterThan(0);
+  expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+
+  // The tail is reachable: pick the last swatch (auto-scrolled into view).
+  await page.getByRole('menuitemradio', { name: 'C40', exact: true }).click();
+  expect(await onlyPolygon(page)).toMatchObject({
+    fillRef: { palette: 'Big', swatch: 'C40' },
+  });
+
+  // And so is creating a new color from the foot — including when the Save
+  // flyout itself lists more palettes than the window is tall: the sub-panel
+  // is capped to the window and scrolls, so its own foot (New palette…) is
+  // reachable. Unlike the swatch menu there is no always-visible foot here —
+  // the whole flyout scrolls — so the pin is the PANEL fitting the viewport
+  // plus the foot row answering a click (which auto-scrolls to it).
+  await page.getByRole('button', { name: 'Fill color palette color' }).click();
+  await save.click();
+  const mint = page.getByRole('menuitem', { name: 'New palette…' });
+  await expect(mint).toBeVisible();
+  const panel = (await page.locator('.menu-sub-panel').boundingBox())!;
+  expect(panel.y).toBeGreaterThanOrEqual(0);
+  expect(panel.y + panel.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  const sub = await page
+    .locator('.menu-sub-panel')
+    .evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }));
+  expect(sub.scrollHeight).toBeGreaterThan(sub.clientHeight);
+  await mint.click();
+  await expect(page.getByRole('textbox', { name: 'Palette name' })).toBeVisible();
+  await page.keyboard.press('Escape');
+});

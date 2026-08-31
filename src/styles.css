@@ -509,6 +509,14 @@ select option {
   align-items: center;
   opacity: 0.6;
 }
+/* A flyout's roster can scale with the map (Save color to palette: one row per
+   design palette), so cap it to the space Radix reports and scroll. Scrolling
+   the panel itself is fine HERE, unlike .palette-color-menu: no flyout nests
+   another flyout, so the overflow clips nothing that has to escape. */
+.menu-panel.menu-sub-panel {
+  max-height: var(--radix-dropdown-menu-content-available-height);
+  overflow-y: auto;
+}
 /* A flyout of colors instead of labels (palette editor: Add color → Custom
    color): the picker's own swatches, tiled to the panel's inner width so six
    sit on a row. [data-highlighted] is a menu's one hover-and-keyboard state,
@@ -1897,6 +1905,15 @@ button.field-select > :not(.field-select-caret) {
    cap above has nothing to bite on. */
 .palette-color-menu {
   max-height: var(--radix-dropdown-menu-content-available-height);
+}
+/* The Radix RadioGroup is a real div sitting BETWEEN the panel's column flex
+   and the scroll box. Left a plain block it floors at its content height —
+   the cap above never reaches the scroll box and the list runs off the
+   window — so it must be one more shrinkable link in the flex chain. */
+.palette-color-menu .palette-color-options {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .palette-color-menu .palette-color-scroll {
   overflow-y: auto;
