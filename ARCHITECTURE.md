@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `9fc0130` (2026-08-28, #551) — verified against the live source.** This
+**Up to date as of commit `c312c10` (2026-08-29, #552) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -595,7 +595,8 @@ kind-mismatched, sentinel-bound or malformed ref goes, keeping the painted value
 palette never changes what the map looks like. Renames (palette and the first-class
 `renameMapPaletteSwatch`) rewrite refs through the shared `mapDocSwatchRefs` walker instead — and
 every sweep here is a visitor over ONE traversal (`walkRefs`) of a per-home SLOT table, so a new
-linked field is added in a single place. The reconcile
+linked field is added in a single place — the export doors' audit reads its refs off that same
+traversal (`collectSwatchRefs`), for the same reason. The reconcile
 runs on both load-side doors — `parse()` for a file, the persist **merge hook** for a rehydrate
 (not `migrateDoc`: a doc already AT the current version never reaches a migration, and merge runs
 on every rehydrate either way) — and persist v30 bakes pre-ref lines that value-match a
@@ -1891,6 +1892,22 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
   question to BOTH, over the id-keyed collections it reads off a populated doc rather than a third
   hand-written list. A collection the repair alone forgets is the cruel case: the file imports,
   and every export door toasts on it forever after, with nothing the user can do to clear it.
+  Three more rule families sit beside the id one, each mirroring a repair the import path makes.
+  **Substance** (`FINITE_FIELDS`): the numbers without which a record describes nothing — a
+  station's position, a tag's distance, a bullet's size, a label's font size, an image's box, a
+  ring's radius, a guide's offset, a polygon's vertices — are the ones step 6c drops the whole
+  record for, so an NaN arriving from inside the app has exactly an id's standing: the item stops
+  rendering where it stands, and only a save-then-load clears it, by deleting it.
+  **Palette identity**: `MapDoc.palettes` is the one collection keyed by NAME, and those names are
+  what refs resolve through, so two palettes (or two swatches within one) under one name is the
+  same violation as an `id` disagreeing with its key. Whether a palette carries any color is not
+  audited — an empty one is canonicality, `dropEmptyPalettes`' business, not a reference.
+  **Swatch refs**: the last reference class living outside a keyed collection. `auditDoc` reads
+  them off `collectSwatchRefs` — the read-only visitor over the same `walkRefs` traversal
+  `reconcileSwatchRefs` drops them through — so a ref home added to the slot table is audited the
+  day it is added, and no second list of homes can fall behind the first. A dangling ref is the
+  quietest corruption in the doc: the color it painted stays put, the link evaporates on the next
+  load, and the only symptom is a palette Reset/Sync that stops doing anything.
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
 - **Load → JSON…**: `parse(text, libraryPalettes)` then `adoptParsedDoc()` (below). The library

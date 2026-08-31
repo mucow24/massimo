@@ -3387,6 +3387,29 @@ function walkRefs<Doc extends RefHomesDoc>(doc: Doc, visit: RefVisitor): Doc {
 }
 
 /**
+ * Every SwatchRef the doc carries, each with the palette kind it resolves
+ * against — the READ-ONLY visitor over `walkRefs`, for a caller that judges
+ * refs instead of rewriting them (`auditDoc`).
+ *
+ * It shares the traversal rather than re-listing the homes for the same reason
+ * the rename and the reconcile do: the slot table is where a ref home is
+ * added, and a home the audit cannot see is a home the export door quietly
+ * stops guarding. Malformed refs (a hand-edited file's) come back as they are
+ * — deciding what a non-`SwatchRef` value means is the caller's business.
+ */
+export function collectSwatchRefs<Doc extends RefHomesDoc>(
+  doc: Doc,
+): { ref: unknown; linePalette: boolean }[] {
+  const out: { ref: unknown; linePalette: boolean }[] = [];
+  walkRefs(doc, (o, slot) => {
+    const ref = slot.ref(o);
+    if (ref !== undefined) out.push({ ref, linePalette: slot.linePalette === true });
+    return o;
+  });
+  return out;
+}
+
+/**
  * Rewrite every SwatchRef in the doc through `map` — the shared body of the
  * palette/swatch RENAME sweeps, which must reach every home a ref lives in and
  * never read as delete-plus-add. Reference-stable.
