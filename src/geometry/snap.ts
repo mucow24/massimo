@@ -1,4 +1,5 @@
 import type {
+  GuideColor,
   GuideOrientation,
   Line,
   LineCircle,
@@ -298,9 +299,13 @@ export interface GuideLine {
 }
 
 /** A guide as a snap TARGET: the line plus the id a `SnapGuide` is credited to.
- *  Callers pass the visibility-gated, exclusion-filtered pool. */
+ *  Callers pass the visibility-gated, exclusion-filtered pool. `color` rides
+ *  along (absent = the blue default) for the one caller that cares — the guide
+ *  drag scopes its parallel pool to the dragged guide's color family before the
+ *  readout and the cadence ever see it; snapping stays color-blind. */
 export interface GuideTarget extends GuideLine {
   id: string;
+  color?: GuideColor;
 }
 
 // ---------- Guide-line geometry ----------
@@ -568,13 +573,17 @@ export function guideSegmentInBox(
  * covers the cursor's along-position (`guideAdmitsFoot` at its foot): past its
  * tip there is no ink to measure to, and a labeled segment ending in blank
  * canvas claims a neighbour that visibly isn't there. `others` must therefore
- * be every parallel guide on the
- * canvas — not the snap pool, which drops the guides MOVING with the drag. A
- * missing one doesn't just go unmeasured: the span reaches past it to the next
- * one out and is drawn straight through it, claiming a "nearest" neighbour with
- * a guide visibly crossing the line. The caller re-derives a towed guide's live
- * offset rather than excluding it (see useGuideDrag; those towed entries carry
- * no extent on purpose — never drawing through a sibling dominates).
+ * be every parallel guide OF THE DRAGGED GUIDE'S COLOR FAMILY on the canvas —
+ * not the snap pool, which drops the guides MOVING with the drag. A missing
+ * family member doesn't just go unmeasured: the span reaches past it to the
+ * next one out and is drawn straight through it, claiming a "nearest" neighbour
+ * with a guide visibly crossing the line. The caller re-derives a towed guide's
+ * live offset rather than excluding it (see useGuideDrag; those towed entries
+ * carry no extent on purpose — never drawing through a sibling dominates).
+ * Color is where that membership rule bends ON PURPOSE: a guide's color is its
+ * spacing family (see AlignmentGuide.color), so the caller keeps other-color
+ * parallels out and a span drawn straight through one names the family gap the
+ * user asked to see — this function itself never reads a color.
  *
  * A COINCIDENT parallel guide (one at this very offset — reachable whenever
  * both are grid-snapped) silences the readout instead: the nearest neighbour is
@@ -623,7 +632,9 @@ export function guideNeighbourReadout(
  * pool the caller may not move — a cadence measured off something towed by the
  * same grab never changes (the station engine spells the same rule
  * `excludedIds`), so the drag hook passes its snap pool here, not the wider one
- * the readout measures against. `at` is the live cursor, the readout's
+ * the readout measures against. Both pools arrive scoped to the dragged
+ * guide's COLOR FAMILY (the caller's job, as with the readout): the cadence
+ * steps off the guide the readout names, so the two must agree on who counts. `at` is the live cursor, the readout's
  * convention: a BOUNDED parallel anchors only where its span covers the
  * cursor's along-position (`guideAdmitsFoot` at its foot) — past its tip there
  * is no ink to step from, and a cadence off invisible ink is a snap the user

@@ -316,6 +316,93 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     expect(r.current.snapGuides.map((g) => g.label)).toEqual(['37.0', '23.0']);
   });
 
+  it('measures only against parallel guides of the SAME color', () => {
+    // Color partitions the parallel guides into spacing families: dragging a
+    // default-blue guide between a nearer red pair and a further blue one, the
+    // readout skips the reds — drawing the span straight through one is the
+    // point, not a bug (the family gap is what is being spaced).
+    seedGuides();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        redLo: makeGuide({ id: 'redLo', orientation: 'horizontal', offset: 40, color: 'red' }),
+        redHi: makeGuide({ id: 'redHi', orientation: 'horizontal', offset: 160, color: 'red' }),
+        blueHi: makeGuide({ id: 'blueHi', orientation: 'horizontal', offset: 200 }),
+      },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // Below: only the red at 40 — no blue neighbour, no span. Above: the red
+    // at 160 is skipped for the blue at 200.
+    expect(r.current.snapGuides).toEqual([
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 200 }, label: '63.0', quiet: true },
+    ]);
+  });
+
+  it('a colored guide measures within its own family too', () => {
+    seedGuides();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        gr: makeGuide({ id: 'gr', orientation: 'horizontal', offset: 300, color: 'green' }),
+        grFar: makeGuide({ id: 'grFar', orientation: 'horizontal', offset: 440, color: 'green' }),
+      },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gr', 'line', pointerEvent({ clientX: 300, clientY: 300 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 337 })));
+    // The default-blue gh at 100 (nearest below) is out of the green family;
+    // the only span is up to the green at 440.
+    expect(r.current.snapGuides).toEqual([
+      { from: { x: 300, y: 337 }, to: { x: 300, y: 440 }, label: '103.0', quiet: true },
+    ]);
+  });
+
+  it('a towed parallel sibling of another color stays out of the readout', () => {
+    seedNeighbours();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        ghHi: makeGuide({ id: 'ghHi', orientation: 'horizontal', offset: 160, color: 'red' }),
+        ghFar: makeGuide({ id: 'ghFar', orientation: 'horizontal', offset: 300 }),
+      },
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['gh', 'ghHi'] });
+    const r = render();
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // The red sibling tows to 197, but it is not in the blue family, so the
+    // span above reaches past it to the stationary blue at 300.
+    expect(useDoc.getState().guides.ghHi.offset).toBe(197);
+    expect(r.current.snapGuides).toEqual([
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97.0', quiet: true },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 300 }, label: '163.0', quiet: true },
+    ]);
+  });
+
+  it('the well pull-out ghost measures against the default-blue family', () => {
+    seedGuides();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        red: makeGuide({ id: 'red', orientation: 'horizontal', offset: 120, color: 'red' }),
+      },
+    });
+    const r = render();
+    act(() =>
+      r.current.onWellPointerDown('horizontal', pointerEvent({ clientX: 300, clientY: 5 })),
+    );
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // A pull mints a default (blue) guide, so the nearer red at 120 is skipped
+    // for the blue gh at 100.
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['37.0']);
+  });
+
   it('stays quiet while the View menu hides guides', () => {
     seedNeighbours();
     useViewportStore.setState({ showGuides: false });
@@ -355,6 +442,25 @@ describe('useGuideDrag — snap to grid length', () => {
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     // Raw 137 is 97 above ghLo; the nearest whole 20 is 100 → 140. The spacing
     // readout is the feedback — the gap it names IS the cadence.
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['100.0']);
+  });
+
+  it('takes its cadence from the nearest guide of the SAME color family', () => {
+    setModes({ tens: true });
+    seedCadence();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        red: makeGuide({ id: 'red', orientation: 'horizontal', offset: 150, color: 'red' }),
+      },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // The red at 150 is nearer but out of the family — the cadence runs from
+    // blue ghLo at 40, same as the readout that announces it: 140, not 130.
     expect(useDoc.getState().guides.gh.offset).toBe(140);
     expect(r.current.snapGuides.map((g) => g.label)).toEqual(['100.0']);
   });

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useDoc } from './store';
 import { useViewportStore, type DayCanvasColor } from './viewportStore';
+import type { GuideColor } from '../model/types';
 
 /**
  * Theming has two halves, split by what can consume CSS:
@@ -44,6 +45,16 @@ export interface ThemeColors {
    * still reads. Night is a lifted periwinkle for the black canvas.
    */
   alignGuide: string;
+  /**
+   * The paint per guide color preset (AlignmentGuide.color) — one entry for
+   * every rung of GUIDE_COLORS, 'blue' being the `alignGuide` value itself so
+   * a lookup never branches. Day values are saturated editor inks in the
+   * `alignGuide` register; night lifts each for the black canvas, and Black
+   * flips to white there like every other black ink (label, selectionStroke).
+   * The popover's swatches read this same table, so the dropdown previews
+   * exactly what the canvas will paint.
+   */
+  alignGuideTints: Record<GuideColor, string>;
   /**
    * The casing under-stroke each alignment guide rides — its OWN slot rather
    * than `canvasBg`: the recipe runs it solid and translucent (see
@@ -122,13 +133,25 @@ export interface ThemeColors {
   darkPaper: boolean;
 }
 
+// The alignment-guide blue, named so `alignGuide` and its tints table can't
+// drift apart on the one value they share.
+const DAY_ALIGN_BLUE = '#0067ff';
+const NIGHT_ALIGN_BLUE = '#8c9cf2';
+
 const LIGHT: ThemeColors = {
   canvasBg: '#fafafa',
   label: '#111111',
   selectionStroke: '#000000',
   grid: '#eeeeee',
   guide: '#b5b5b5',
-  alignGuide: '#0067ff',
+  alignGuide: DAY_ALIGN_BLUE,
+  alignGuideTints: {
+    blue: DAY_ALIGN_BLUE,
+    red: '#d92b2b',
+    green: '#0f9b3d',
+    purple: '#8a2be2',
+    black: '#000000',
+  },
   alignGuideCasing: '#fafafab5',
   alignGuideSelected: '#e07a1f',
   alignGuideHover: '#f0a76a',
@@ -150,7 +173,14 @@ const DARK: ThemeColors = {
   selectionStroke: '#ffffff',
   grid: '#222222',
   guide: '#5a5a5a',
-  alignGuide: '#8c9cf2',
+  alignGuide: NIGHT_ALIGN_BLUE,
+  alignGuideTints: {
+    blue: NIGHT_ALIGN_BLUE,
+    red: '#f28c8c',
+    green: '#6ed494',
+    purple: '#c39ef2',
+    black: '#ffffff',
+  },
   alignGuideCasing: '#000000',
   alignGuideSelected: '#ffb066',
   alignGuideHover: '#c98a45',

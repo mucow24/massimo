@@ -86,6 +86,11 @@ interface Props {
   // The idle one is what a Developer-pane color dial replaces; the states are
   // never overridden (see `stroke` below).
   guideColor: string;
+  // The per-guide preset paint, resolved from AlignmentGuide.color by the
+  // canvas (theme.alignGuideTints) — absent on a default-blue guide. An
+  // explicit choice about THIS guide, so it outranks the dial (which re-tunes
+  // the default) but never the state restrokes.
+  tintColor?: string;
   // The casing under-stroke's color — theme.alignGuideCasing, a fixed
   // translucent near-white on day paper (black on night). Its own theme slot
   // rather than theme.canvasBg: a translucent rail has to read OVER the paper
@@ -140,6 +145,7 @@ export function GuideView({
   vbW,
   vbH,
   guideColor,
+  tintColor,
   casingColor,
   selectedColor,
   hoverColor,
@@ -229,16 +235,16 @@ export function GuideView({
     isGaplessDash(pattern)
       ? { strokeDasharray: undefined, strokeDashoffset: undefined }
       : { strokeDasharray: pattern.map(ink).join(' '), strokeDashoffset: phaseOf(pattern) };
-  // Every state is a restroke of the core, so a color dial can only be the
-  // IDLE one — an override that swallowed selected/engaged/hover would take
-  // the states with it.
+  // Every state is a restroke of the core, so a color dial — or a per-guide
+  // tint — can only be the IDLE one: an override that swallowed
+  // selected/engaged/hover would take the states with it.
   const stroke = selected
     ? selectedColor
     : engaged
       ? accentColor
       : hovered
         ? hoverColor
-        : (recipe.color ?? guideColor);
+        : (tintColor ?? recipe.color ?? guideColor);
   return (
     <g
       data-guide={guide.id}

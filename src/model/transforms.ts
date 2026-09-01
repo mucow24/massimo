@@ -127,6 +127,7 @@ import type {
   AutoHAlign,
   AutoVAlign,
   DayNightColor,
+  GuideColor,
   GuideOrientation,
   DotStyle,
   LabelAlign,
@@ -4744,6 +4745,21 @@ export function resizeGuide(
 // setStationLocked) so single- and multi-select locking can't drift apart.
 export function setGuideLocked(doc: MapDoc, id: string, locked: boolean): MapDoc {
   return setItemsLocked(doc, { guides: [id] }, locked);
+}
+
+/** Paint a guide one of the preset colors. 'blue' is the default and is
+ *  spelled as absence — the locked convention — so picking it DROPS the field.
+ *  No lock check, like every sibling: the popover disables the control. */
+export function setGuideColor(doc: MapDoc, id: string, color: GuideColor): MapDoc {
+  const cur = doc.guides[id];
+  if (!cur) return doc;
+  if (color === 'blue') {
+    if (cur.color === undefined) return doc;
+    const { color: _gone, ...rest } = cur;
+    return { ...doc, guides: { ...doc.guides, [id]: rest } };
+  }
+  if (cur.color === color) return doc;
+  return { ...doc, guides: { ...doc.guides, [id]: { ...cur, color } } };
 }
 
 export function deleteGuide(doc: MapDoc, id: string): MapDoc {

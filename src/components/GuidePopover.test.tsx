@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { chooseOption } from '../test/interaction';
 import { GuidePopover } from './GuidePopover';
 import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
@@ -224,6 +226,37 @@ describe('GuidePopover — the Length row', () => {
     renderGuide({ offset: 120, extent: { center: 300, halfLength: 50 }, locked: true });
     expect(screen.getByRole('spinbutton', { name: 'Length' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Make infinite' })).toHaveProperty('disabled', true);
+  });
+});
+
+describe('GuidePopover — the Color row', () => {
+  it('shows Blue for a guide with no stored color — absence IS the default', () => {
+    renderGuide();
+    expect(screen.getByRole('combobox', { name: 'Color' }).textContent).toContain('Blue');
+  });
+
+  it('shows a stored preset by name', () => {
+    renderGuide({ color: 'purple' });
+    expect(screen.getByRole('combobox', { name: 'Color' }).textContent).toContain('Purple');
+  });
+
+  it('commits a picked preset through setGuideColor', async () => {
+    const user = userEvent.setup();
+    renderGuide();
+    await chooseOption(user, 'Color', 'Green');
+    expect(current().color).toBe('green');
+  });
+
+  it('picking Blue collapses the field back to absent', async () => {
+    const user = userEvent.setup();
+    renderGuide({ color: 'red' });
+    await chooseOption(user, 'Color', 'Blue');
+    expect('color' in current()).toBe(false);
+  });
+
+  it('locked disables the select', () => {
+    renderGuide({ locked: true });
+    expect(screen.getByRole('combobox', { name: 'Color' })).toHaveProperty('disabled', true);
   });
 });
 
