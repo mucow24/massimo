@@ -1,5 +1,6 @@
 import { edgeEndpoints } from './lineTopology';
 import { pairKeyOf } from './pairKey';
+import { STATION_FINITE_FIELDS } from './serialize';
 import { collectSwatchRefs } from './transforms';
 import { endStationId, isFreeAnchorEnd, isHostedAnchorEnd } from './transferAnchors';
 import { isSwatchRef, resolveDesignSwatchRef, resolveLineSwatchRef } from './swatchRef';
@@ -41,8 +42,10 @@ const ID_KEYED_COLLECTIONS: ReadonlyArray<[keyof MapDoc, string]> = [
 // the item stops rendering where it stands, and the only thing that clears it
 // is a save-then-load that DELETES the user's work. `polygons` is absent here
 // because its substance is an array of vertices, audited on its own below.
+// STATIONS are absent for a different reason, and a sharper one: their
+// numbers are not dropped by step 6c at all, they are refused by step 1's
+// shape gate — a harsher consequence with its own sweep below.
 const FINITE_FIELDS: ReadonlyArray<[keyof MapDoc, string, readonly string[]]> = [
-  ['stations', 'station', ['x', 'y']],
   ['transferAnchors', 'transferAnchor', ['x', 'y']],
   ['lineTags', 'lineTag', ['distance']],
   ['routeBullets', 'routeBullet', ['x', 'y', 'size']],
@@ -107,7 +110,27 @@ export function auditDoc(doc: MapDoc): string[] {
     if (!finite(p.strokeWidth)) v.push(`polygon "${key}": non-finite strokeWidth`);
   }
 
+  // A station's numbers, read off the load gate's own list
+  // (`STATION_FINITE_FIELDS` in serialize.ts) rather than a second copy of it.
+  // These sit apart from FINITE_FIELDS because their consequence is the
+  // harshest in the doc: a non-finite one does not drop the station, it trips
+  // step 1's shape gate and REFUSES THE WHOLE FILE. An export door that lets
+  // one past writes a map that will never open again — every other station in
+  // it lost too — so this is the one family where a silent export is worse
+  // than the corruption it is hiding. Judged when PRESENT: the type requires
+  // all of them but `label.offsetPerp`, which is omitted at zero.
+  const finiteOn = (obj: object, fields: readonly string[], where: string, key: string) => {
+    for (const f of fields) {
+      if (f in obj && !finite((obj as Record<string, unknown>)[f]))
+        v.push(`station "${key}": non-finite ${where}${f}`);
+    }
+  };
+
   for (const [key, st] of Object.entries(doc.stations)) {
+    finiteOn(st, STATION_FINITE_FIELDS.station, '', key);
+    for (const stop of st.stops) finiteOn(stop, STATION_FINITE_FIELDS.stop, 'stop ', key);
+    finiteOn(st.label, STATION_FINITE_FIELDS.label, 'label ', key);
+
     if (st.circleId !== undefined && !doc.lineCircles[st.circleId])
       v.push(`station "${key}": dangling circleId "${st.circleId}"`);
     const seen = new Set<string>();
@@ -222,6 +245,18 @@ export function auditDoc(doc: MapDoc): string[] {
       v.push(`regionAssignment "${key}": chosen line is not in its cover set`);
     for (const l of a.lines) {
       if (!doc.lines[l]) v.push(`regionAssignment "${key}": dangling cover line "${l}"`);
+    }
+    // An anchor's numbers are substance in the FINITE_FIELDS sense, one level
+    // down: `sanitizeRegionAssignments` FILTERS an anchor whose distance is
+    // not a finite arc length (finite and ≥ 0), and drops the whole
+    // assignment once that leaves it with none — so a NaN here is the user's
+    // region paint quietly gone on the next load. `side` is optional (absent
+    // ⇒ on the path) and judged only when carried, on the same predicate.
+    for (const an of a.anchors) {
+      if (!finite(an.distance) || an.distance < 0)
+        v.push(`regionAssignment "${key}": non-finite or negative anchor distance`);
+      if (an.side !== undefined && !finite(an.side))
+        v.push(`regionAssignment "${key}": non-finite anchor side`);
     }
   }
 

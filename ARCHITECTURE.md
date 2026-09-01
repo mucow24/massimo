@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `c312c10` (2026-08-29, #552) — verified against the live source.** This
+**Up to date as of commit `a6c364b` (2026-09-01, #555) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -1647,9 +1647,13 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
    clipboard run too, so the "not valid JSON" / "not a JSON object" wording is one string apiece
    rather than a copy per door); then reject `format !== 'massimo-map'` / missing `doc`. Then the
    substance shape gate (`docShapeError`): a collection of the wrong container type, a station
-   entry that isn't an object, a non-finite coordinate/rotation/cell, a non-array
-   `stops`/`stations`/`edges` — each refuses the whole file. (`palettes` and `styles` stay out of
-   the gate: their sanitizers have always healed garbage wholesale, and that behavior is pinned.)
+   entry that isn't an object, a non-array `stops`/`stations`/`edges`, and any non-finite number
+   on a station — its coordinate or rotation, a stop cell, a label's cell, rotation or either
+   offset (`STATION_FINITE_FIELDS`, the list the export audit reads too) — each refuses the whole
+   file. Refusing rather than healing is the point: a NaN coordinate has no faithful repair, and
+   inventing a zero would hand back a map with a station silently moved. (`palettes` and `styles`
+   stay out of the gate: their sanitizers have always healed garbage wholesale, and that behavior
+   is pinned.)
 2. Two bakes **before** the merge: `migrateLegacyLabelBold` (so `labelBold` never leaks into the
    typed shape) and `bakeLegacyBackgroundOrder` (retired `polygonOrder` + `svgImageOrder` → the
    single `backgroundOrder`). The second MUST precede the merge — the merge fabricates
@@ -1892,12 +1896,23 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
   question to BOTH, over the id-keyed collections it reads off a populated doc rather than a third
   hand-written list. A collection the repair alone forgets is the cruel case: the file imports,
   and every export door toasts on it forever after, with nothing the user can do to clear it.
-  Three more rule families sit beside the id one, each mirroring a repair the import path makes.
-  **Substance** (`FINITE_FIELDS`): the numbers without which a record describes nothing — a
-  station's position, a tag's distance, a bullet's size, a label's font size, an image's box, a
-  ring's radius, a guide's offset, a polygon's vertices — are the ones step 6c drops the whole
+  Four more rule families sit beside the id one, each mirroring a repair the import path makes.
+  **Substance** (`FINITE_FIELDS`): the numbers without which a record describes nothing — a tag's
+  distance, a bullet's size, a label's font size, an image's box, a ring's radius, a guide's
+  offset, a polygon's vertices, a free anchor's point — are the ones step 6c drops the whole
   record for, so an NaN arriving from inside the app has exactly an id's standing: the item stops
-  rendering where it stands, and only a save-then-load clears it, by deleting it.
+  rendering where it stands, and only a save-then-load clears it, by deleting it. A region
+  assignment's ANCHORS are the same rule one level down: `sanitizeRegionAssignments` filters an
+  anchor whose distance is not a finite arc length (finite, ≥ 0) and drops the assignment once
+  that leaves it with none, so a NaN there is the user's region paint quietly gone.
+  **Station numbers** (`STATION_FINITE_FIELDS`, read off serialize.ts rather than restated): the
+  station family is deliberately NOT part of the set above, because its consequence is harsher.
+  A non-finite station coordinate or rotation, stop cell, or label cell/offset does not drop the
+  station — it trips step 1's shape gate and REFUSES THE WHOLE FILE. So an export door that lets
+  one past writes a map that will never open again, every other station in it lost with it, which
+  makes this the one family where the silent export is worse than the corruption behind it. The
+  gate's list is the audit's list for that reason, and `docAudit.test.ts` pins both halves: each
+  field is flagged, and the file each would write really does fail to load.
   **Palette identity**: `MapDoc.palettes` is the one collection keyed by NAME, and those names are
   what refs resolve through, so two palettes (or two swatches within one) under one name is the
   same violation as an `id` disagreeing with its key. Whether a palette carries any color is not
@@ -2233,7 +2248,11 @@ storage, a loss only a reload reveals. So the write swallows it, keeps the in-me
 pending blob rather than re-offering one that cannot fit, and reports through a toast — once per
 run of failures, not per keystroke. The import ceiling (`MAX_IMAGE_IMPORT_BYTES`, 3.5 MB, in
 [svgImport.ts](src/model/svgImport.ts)) is the other half: it keeps the common cause from reaching
-the doc at all.
+the doc at all. Its value is not free — an image rides in the doc as a base64 data URI, so the
+ceiling has to fit `LOCALSTORAGE_QUOTA_BYTES` once inflated by a third, with
+`DOC_HEADROOM_BYTES` left for the map around it. A round 3.5 MB rather than that arithmetic,
+because the number is quoted at the user; the arithmetic is a test instead, since every other
+test of the gate sizes its fixture FROM the constant and so passes at any value.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:

@@ -16,13 +16,43 @@ const IMAGE_HREF_PREFIXES = ['data:image/svg+xml', 'data:image/png', 'data:image
 export const RASTER_IMPORT_MIMES = ['image/png', 'image/jpeg'] as const;
 
 /**
+ * The localStorage budget the import ceiling is sized against — the ~5MB an
+ * origin gets. A doc that outgrows it stops reaching storage; the store
+ * swallows the throw and toasts rather than let it escape mid-`set()` (see
+ * store.ts), but that is a backstop for the unforeseen, not the plan. The
+ * plan is that no single import can get the doc there on its own.
+ */
+export const LOCALSTORAGE_QUOTA_BYTES = 5 * 1024 * 1024;
+
+/**
+ * What the REST of a map is allowed to weigh beside a ceiling-sized image —
+ * every station, line, style and palette in it. A large map's JSON runs well
+ * under this, so the margin is real rather than nominal.
+ */
+export const DOC_HEADROOM_BYTES = 256 * 1024;
+
+/**
+ * The bytes a base64 payload of `n` raw bytes occupies: four characters per
+ * three bytes, padded up. This is the inflation the ceiling has to budget
+ * for — an imported image lives in the doc as a data URI, so what the quota
+ * sees is never the file size the user picked.
+ */
+export const base64Bytes = (n: number): number => Math.ceil(n / 3) * 4;
+
+/**
  * The largest image file we will pull into a map. An imported image lives in
  * the document as an inline data URI, so it is re-serialized into localStorage
- * on every edit (a ~5MB origin quota, and base64 inflates the bytes by a third
- * on the way in) and travels inside every exported file. 3.5 MB is the most
- * the quota can afford: it encodes to ~4.7MB, leaving room for the rest of
- * the doc, while anything bigger risks the persisted doc silently failing to
- * reach storage — so the gate is on BYTES, not just on the mime type.
+ * on every edit and travels inside every exported file. 3.5 MB is the most the
+ * quota can afford: it encodes to ~4.7MB, leaving the doc its headroom, while
+ * anything bigger risks the persisted doc silently failing to reach storage —
+ * so the gate is on BYTES, not just on the mime type.
+ *
+ * A round number rather than a value derived from the two constants above,
+ * because it is quoted straight at the user ("limit 3.5 MB", see Toolbar) and
+ * `(QUOTA − HEADROOM) × ¾` does not read like a limit anyone chose. What keeps
+ * it honest is `svgImport.test.ts`, which does the arithmetic: every other
+ * test here sizes its fixtures FROM this constant and so passes at any value,
+ * which is how 5 MB shipped once and had to be walked back.
  */
 export const MAX_IMAGE_IMPORT_BYTES = 3.5 * 1024 * 1024;
 
