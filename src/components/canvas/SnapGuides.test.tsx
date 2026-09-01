@@ -128,6 +128,25 @@ describe('<SnapGuides />', () => {
     });
   });
 
+  // A labelOnly guide is a pure readout: its span exists only to PLACE the
+  // label (midpoint + perpendicular), never as ink — the SVG-image resize
+  // dimension readout rides edges the selection box already outlines, so
+  // drawing the span would double-ink them.
+  it('renders a labelOnly guide as its label alone, with no line ink', () => {
+    const guides: SnapGuide[] = [
+      { from: { x: 0, y: 0 }, to: { x: 100, y: 0 }, label: '100.0', quiet: true, labelOnly: true },
+    ];
+    const { container } = render(<SnapGuides guides={guides} zoom={1} />);
+    expect(container.querySelectorAll('line')).toHaveLength(0);
+    expect(container.querySelectorAll('circle')).toHaveLength(0);
+    const text = labelText(container);
+    expect(text).not.toBeNull();
+    expect(text.textContent).toBe('100.0');
+    // Placed like any other labelled span: midpoint, offset up the flipped
+    // perpendicular by the quiet register's gap.
+    expect(Number(text.getAttribute('x'))).toBeCloseTo(50, 6);
+  });
+
   it('never draws an alignment-guide MARKER as a plain segment', () => {
     const guides: SnapGuide[] = [{ from: { x: 5, y: 5 }, to: { x: 5, y: 5 }, alignGuideId: 'gh' }];
     const { container } = render(<SnapGuides guides={guides} zoom={1} />);

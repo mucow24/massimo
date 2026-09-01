@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { dot, midpoint, sub } from './vec';
+import { guideLabelSide } from './snap';
 import {
   normalizeRotation,
   snapAngle,
@@ -6,6 +8,7 @@ import {
   resizeSvgImageCorner,
   resizeSvgImageEdge,
   rotateSvgImageTo,
+  svgImageDimensionGuides,
   svgImageSnapAnchor,
   SVG_IMAGE_MIN_SIZE,
   type SvgImageGeom,
@@ -146,5 +149,52 @@ describe('svgImageSnapAnchor', () => {
     // 90°: corners TL=(30,-50), TR=(30,50), BR=(-30,50), BL=(-30,-50).
     // Highest (min y) = -50 at TL and BL; leftmost wins → BL=(-30,-50).
     near(svgImageSnapAnchor(base({ rotation: 90 })), { x: -30, y: -50 });
+  });
+});
+
+describe('svgImageDimensionGuides', () => {
+  it('rides the top edge with the width and the right edge with the height', () => {
+    const g = svgImageDimensionGuides({ x: 10, y: 0, width: 120, height: 60 }, 0);
+    expect(g).toHaveLength(2);
+    // Width: TL → TR, so the flipped perpendicular puts the label ABOVE.
+    near(g[0].from, { x: -50, y: -30 });
+    near(g[0].to, { x: 70, y: -30 });
+    expect(g[0].label).toBe('120.0');
+    // Height: BR → TR (upward), whose unflipped perpendicular points east.
+    near(g[1].from, { x: 70, y: 30 });
+    near(g[1].to, { x: 70, y: -30 });
+    expect(g[1].label).toBe('60.0');
+    for (const d of g) {
+      expect(d.quiet).toBe(true);
+      expect(d.labelOnly).toBe(true);
+    }
+  });
+
+  it('swaps to the opposite edges on a rotated image so the labels stay OUTSIDE', () => {
+    // At 90° the local top edge sits on the screen's RIGHT and its screen-up
+    // label would land inside the box — so the width readout switches to the
+    // local bottom edge (now the screen-left edge, label pointing west), and
+    // the height to the local left edge (now the screen-top edge, label above).
+    // Corners at 90°: TL=(30,-50), TR=(30,50), BR=(-30,50), BL=(-30,-50).
+    const g = svgImageDimensionGuides({ x: 0, y: 0, width: 100, height: 60 }, 90);
+    near(g[0].from, { x: -30, y: -50 }); // BL
+    near(g[0].to, { x: -30, y: 50 }); // BR
+    expect(g[0].label).toBe('100.0');
+    near(g[1].from, { x: -30, y: -50 }); // BL
+    near(g[1].to, { x: 30, y: -50 }); // TL
+    expect(g[1].label).toBe('60.0');
+  });
+
+  it('lands every label outside the box at any rotation', () => {
+    // The side SnapGuides will place each label on (guideLabelSide — the
+    // shared rule) must point AWAY from the image center, both guides, all
+    // octants.
+    for (const rotation of [0, 45, 90, 135, 180, 225, 270, 315]) {
+      for (const g of svgImageDimensionGuides({ x: 7, y: -3, width: 100, height: 60 }, rotation)) {
+        const mid = midpoint(g.from, g.to);
+        const outward = sub(mid, { x: 7, y: -3 });
+        expect(dot(guideLabelSide(g.from, g.to), outward)).toBeGreaterThan(0);
+      }
+    }
   });
 });
