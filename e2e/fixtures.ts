@@ -125,6 +125,12 @@ export interface SeedPolygon {
   darkStroke?: string;
 }
 
+export interface SeedPalette {
+  name: string;
+  kind?: 'design';
+  swatches: { name: string; color: string; night?: string }[];
+}
+
 export interface Seed {
   stations: SeedStation[];
   lines: SeedLine[];
@@ -132,6 +138,9 @@ export interface Seed {
   textLabels?: SeedTextLabel[];
   polygons?: SeedPolygon[];
   lineCircles?: SeedLineCircle[];
+  // Palette copies the map carries. Swatch names must be unique within a
+  // palette — they are the ref key, and the v30 migration renames collisions.
+  palettes?: SeedPalette[];
   // Seed a NIGHT map. Omit to persist a doc without the field at all — a save
   // predating it, which must rehydrate to day via the DEFAULT_DOC merge.
   darkMode?: boolean;
@@ -306,6 +315,7 @@ export async function seedAndOpen(
       polygons,
       polygonOrder: (seed.polygons ?? []).map((p) => p.id),
       lineCircles,
+      ...(seed.palettes !== undefined ? { palettes: seed.palettes } : {}),
       ...(seed.darkMode !== undefined ? { darkMode: seed.darkMode } : {}),
       // Seeding stopDot styles makes bakeStopDotLibrary a no-op (it only seeds
       // when none exist), so the full catalog survives migration; the invariant

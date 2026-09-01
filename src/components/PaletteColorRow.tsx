@@ -345,6 +345,11 @@ export function PaletteColorRow({
               loop
             >
               <Dropdown.RadioGroup
+                // Radix renders the group as a real div between the capped
+                // panel and the scroll box — the class keeps it a shrinkable
+                // flex column so the cap reaches the scroll box at all (see
+                // .palette-color-options in styles.css).
+                className="palette-color-options"
                 value={swatchRef !== undefined && linked ? encodeRef(swatchRef) : CUSTOM}
                 onValueChange={(v) => {
                   if (v === CUSTOM) {
