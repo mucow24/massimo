@@ -6,7 +6,7 @@ import { StatusToasts } from './components/StatusToasts';
 import { BouncingBullet } from './components/BouncingBullet';
 import { isFunModeActive } from './state/funMode';
 import { DEFAULT_PARAMS } from './fun/ballPhysics';
-import { nextGridSize, useViewportStore } from './state/viewportStore';
+import { chromeIsDark, nextGridSize, useViewportStore } from './state/viewportStore';
 import { kindVisibleNow, setVisibility, VISIBILITY_ITEMS } from './state/visibility';
 import {
   beginHistoryGroup,
@@ -114,11 +114,12 @@ function collectClipItems(
 
 export default function App() {
   const darkMode = useDoc((s) => s.darkMode);
-  // The chrome is dark when the map is a night map OR the local "Dark UI in day"
-  // preference is on. The canvas half doesn't read this — it stays keyed to the
-  // doc's darkMode (see themeColors) — so a dark UI can sit over a light map.
-  const darkUiInDay = useViewportStore((s) => s.darkUiInDay);
-  const chromeDark = darkMode || darkUiInDay;
+  // The chrome's theme is the local "Interface theme" preference resolved
+  // against the map's day/night (auto follows the map; light/dark pin it). The
+  // canvas half doesn't read this — it stays keyed to the doc's darkMode (see
+  // themeColors) — so a dark UI can sit over a light map and vice versa.
+  const interfaceTheme = useViewportStore((s) => s.interfaceTheme);
+  const chromeDark = chromeIsDark(interfaceTheme, darkMode);
 
   // Keep the browser tab title in sync with the map name: "Massimo - <name>".
   const docName = useDoc((s) => s.name);

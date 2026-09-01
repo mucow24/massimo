@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useLiveViewportStore, useViewportStore, nextGridSize, GRID_SIZES } from './viewportStore';
+import {
+  useLiveViewportStore,
+  useViewportStore,
+  nextGridSize,
+  chromeIsDark,
+  GRID_SIZES,
+} from './viewportStore';
 
 beforeEach(() => {
   localStorage.clear();
@@ -22,7 +28,7 @@ beforeEach(() => {
     showPolygons: true,
     showRouteBullets: true,
     dayCanvasColor: 'white',
-    darkUiInDay: false,
+    interfaceTheme: 'auto',
   });
 });
 
@@ -140,31 +146,31 @@ describe('viewportStore — showWaypoints', () => {
   });
 });
 
-describe('viewportStore — darkUiInDay', () => {
-  it('defaults to off: a day map opens with light chrome', () => {
-    expect(useViewportStore.getInitialState().darkUiInDay).toBe(false);
+describe('viewportStore — interfaceTheme', () => {
+  it("defaults to 'auto': the chrome follows the map", () => {
+    expect(useViewportStore.getInitialState().interfaceTheme).toBe('auto');
   });
 
-  it('setDarkUiInDay updates the value', () => {
-    useViewportStore.getState().setDarkUiInDay(true);
-    expect(useViewportStore.getState().darkUiInDay).toBe(true);
-    useViewportStore.getState().setDarkUiInDay(false);
-    expect(useViewportStore.getState().darkUiInDay).toBe(false);
+  it('setInterfaceTheme updates the value', () => {
+    useViewportStore.getState().setInterfaceTheme('dark');
+    expect(useViewportStore.getState().interfaceTheme).toBe('dark');
+    useViewportStore.getState().setInterfaceTheme('light');
+    expect(useViewportStore.getState().interfaceTheme).toBe('light');
   });
 
-  it('persists darkUiInDay to localStorage (partialize)', () => {
-    useViewportStore.getState().setDarkUiInDay(true);
+  it('persists interfaceTheme to localStorage (partialize)', () => {
+    useViewportStore.getState().setInterfaceTheme('dark');
     const raw = localStorage.getItem('massimo-viewport');
     expect(raw).toBeTruthy();
-    expect(JSON.parse(raw!).state.darkUiInDay).toBe(true);
+    expect(JSON.parse(raw!).state.interfaceTheme).toBe('dark');
   });
 
-  it('rehydrating a blob without darkUiInDay leaves the live value untouched', async () => {
-    // A viewport saved before darkUiInDay existed. Seeded ON (the non-default)
+  it('rehydrating a blob without interfaceTheme leaves the live value untouched', async () => {
+    // A viewport saved before interfaceTheme existed. Seeded to a non-default
     // so this observes the omitted key being preserved rather than re-reading
-    // the `false` beforeEach already wrote; the boot default is pinned by the
+    // the 'auto' beforeEach already wrote; the boot default is pinned by the
     // getInitialState test above.
-    useViewportStore.setState({ darkUiInDay: true });
+    useViewportStore.setState({ interfaceTheme: 'dark' });
     localStorage.setItem(
       'massimo-viewport',
       JSON.stringify({
@@ -174,9 +180,33 @@ describe('viewportStore — darkUiInDay', () => {
     );
     await useViewportStore.persist.rehydrate();
     const s = useViewportStore.getState();
-    expect(s.darkUiInDay).toBe(true);
-    expect(s.darkUiInDay).not.toBeUndefined();
+    expect(s.interfaceTheme).toBe('dark');
     expect(s.gridVisible).toBe(false); // control: the rehydrate did apply
+  });
+
+  // Same gate as the day paper: a stored theme the ladder doesn't offer has no
+  // menu row to climb back out through, so it heals to the default on the way in.
+  it('heals a stored theme the ladder does not offer back to the default', async () => {
+    localStorage.setItem(
+      'massimo-viewport',
+      JSON.stringify({ state: { interfaceTheme: 'sepia' }, version: 0 }),
+    );
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState().interfaceTheme).toBe('auto');
+  });
+});
+
+describe('chromeIsDark — the interface theme resolved against the map', () => {
+  it("'auto' follows the map", () => {
+    expect(chromeIsDark('auto', false)).toBe(false);
+    expect(chromeIsDark('auto', true)).toBe(true);
+  });
+
+  it("'light' and 'dark' ignore the map", () => {
+    expect(chromeIsDark('light', false)).toBe(false);
+    expect(chromeIsDark('light', true)).toBe(false);
+    expect(chromeIsDark('dark', false)).toBe(true);
+    expect(chromeIsDark('dark', true)).toBe(true);
   });
 });
 

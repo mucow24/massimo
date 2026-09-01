@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { openMapMenu, seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
 
 // The canvas background rect and on-canvas label fills come from the JS theme
@@ -100,12 +100,21 @@ test.describe('dark mode', () => {
   });
 });
 
-// "Dark UI in day" is the OTHER dark: a local viewing preference (viewportStore,
-// persisted, never on the doc) that darkens only the chrome, leaving the map's
-// canvas exactly as the doc defines it. It's orthogonal to the doc's night mode
-// (the moon toggle) — the whole point is a dark UI over a still-light map.
-test.describe('dark UI in day', () => {
-  test('darkens the chrome only, leaving a light map light on the canvas', async ({ page }) => {
+// The interface theme is the OTHER dark: a local viewing preference
+// (viewportStore, persisted, never on the doc) that themes only the chrome,
+// leaving the map's canvas exactly as the doc defines it. It's orthogonal to the
+// doc's night mode (the moon toggle) — "Always dark" is a dark UI over a
+// still-light map, "Always light" a light UI over a night map.
+test.describe('interface theme', () => {
+  const pickTheme = async (page: Page, label: string) => {
+    await openMapMenu(page);
+    await page.getByRole('menuitem', { name: 'Interface theme' }).click();
+    await page.getByRole('menuitemradio', { name: label }).click();
+  };
+
+  test('Always dark darkens the chrome only, leaving a light map light on the canvas', async ({
+    page,
+  }) => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
 
     const app = page.locator('.app');
@@ -117,8 +126,7 @@ test.describe('dark UI in day', () => {
     await expect(app).not.toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#fafafa');
 
-    await openMapMenu(page);
-    await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
+    await pickTheme(page, 'Always dark');
 
     // Chrome flipped dark…
     await expect(app).toHaveAttribute('data-theme', 'dark');
@@ -129,14 +137,13 @@ test.describe('dark UI in day', () => {
     await expect(host).toHaveCSS('background-color', 'rgb(250, 250, 250)');
   });
 
-  test('is independent of the doc night toggle, and sticky across it', async ({ page }) => {
+  test('pinned themes ignore the doc night toggle; Auto follows it', async ({ page }) => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
 
     const app = page.locator('.app');
     const bg = page.locator('[data-bg]');
 
-    await openMapMenu(page);
-    await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
+    await pickTheme(page, 'Always dark');
     await expect(app).toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#fafafa');
 
@@ -145,17 +152,23 @@ test.describe('dark UI in day', () => {
     await expect(app).toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#000000');
 
-    // Back to a day map: canvas relights, but the chrome preference sticks.
-    await page.getByRole('button', { name: 'Toggle dark mode' }).click();
+    // Always light over that night map: chrome relights, canvas stays black.
+    await pickTheme(page, 'Always light');
+    await expect(app).not.toHaveAttribute('data-theme', 'dark');
+    await expect(bg).toHaveAttribute('fill', '#000000');
+
+    // Auto: the chrome goes back to following the map.
+    await pickTheme(page, 'Auto (follows map)');
     await expect(app).toHaveAttribute('data-theme', 'dark');
+    await page.getByRole('button', { name: 'Toggle dark mode' }).click();
+    await expect(app).not.toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#fafafa');
   });
 
   test('persists across a reload', async ({ page }) => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
 
-    await openMapMenu(page);
-    await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
+    await pickTheme(page, 'Always dark');
     await expect(page.locator('.app')).toHaveAttribute('data-theme', 'dark');
 
     await page.reload();

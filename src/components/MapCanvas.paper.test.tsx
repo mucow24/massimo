@@ -12,14 +12,14 @@ stubCanvasHostSize();
  * `data-paper` on the canvas host answers one question for the chrome that sits
  * ON the canvas as HTML — today the guide wells, whose ink flips off it in
  * styles.css. It tracks the PAPER, never the chrome's `data-theme`, because the
- * two disagree in both directions: "Dark UI in day" darkens the toolbar over a
- * still-light map, and the gray/black day papers darken the map under a
+ * two disagree in both directions: an "Always dark" chrome darkens the toolbar
+ * over a still-light map, and the gray/black day papers darken the map under a
  * still-light toolbar.
  */
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, darkMode: false });
   useSelection.setState({ ...useSelection.getState(), uiMode: { kind: 'idle' } });
-  useViewportStore.setState({ darkUiInDay: false, dayCanvasColor: 'white', showGuides: true });
+  useViewportStore.setState({ interfaceTheme: 'auto', dayCanvasColor: 'white', showGuides: true });
 });
 
 const paper = () => document.querySelector('.canvas-host')!.getAttribute('data-paper');
@@ -30,8 +30,8 @@ describe('canvas paper marker', () => {
     expect(paper()).toBeNull();
   });
 
-  it('ignores the chrome theme — "Dark UI in day" leaves the paper light', () => {
-    useViewportStore.setState({ darkUiInDay: true });
+  it('ignores the chrome theme — an "Always dark" chrome leaves the paper light', () => {
+    useViewportStore.setState({ interfaceTheme: 'dark' });
     render(<App />);
     // The chrome went dark…
     expect(document.querySelector('.app')!.getAttribute('data-theme')).toBe('dark');

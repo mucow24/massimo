@@ -23,6 +23,31 @@ export const isDayCanvasColor = (v: unknown): v is DayCanvasColor =>
 export const DEFAULT_DAY_CANVAS_COLOR: DayCanvasColor = 'white';
 
 /**
+ * How the CHROME (toolbar, sidebar, menus, popovers) is themed, in menu order —
+ * the Map menu's "Interface theme" submenu takes its rows from this ladder.
+ * 'auto' follows the map (a night map gets a dark chrome, a day map a light
+ * one); 'light' and 'dark' pin the chrome regardless. A local viewing
+ * preference, never a doc property: the canvas palette (themeColors) never
+ * reads it, so the map renders exactly as the doc defines it, and a dark
+ * chrome can sit over a still-light map (or a light one over a night map).
+ * Distinct from the doc's night mode (MapDoc.darkMode, the moon toggle), which
+ * repaints the canvas too and travels in the saved file.
+ */
+export const INTERFACE_THEMES = ['auto', 'light', 'dark'] as const;
+export type InterfaceTheme = (typeof INTERFACE_THEMES)[number];
+export const isInterfaceTheme = (v: unknown): v is InterfaceTheme =>
+  (INTERFACE_THEMES as readonly unknown[]).includes(v);
+
+/** The theme a fresh boot opens on, and what a stored non-member heals to. */
+export const DEFAULT_INTERFACE_THEME: InterfaceTheme = 'auto';
+
+/** Is the chrome dark? The interface theme resolved against the map's own
+ *  day/night — the one place `data-theme` on `.app` is decided (see App.tsx). */
+export function chromeIsDark(theme: InterfaceTheme, mapDark: boolean): boolean {
+  return theme === 'auto' ? mapDark : theme === 'dark';
+}
+
+/**
  * The next grid size in the cycle (5 → 10 → 20 → 5). Falls back to the first
  * size when `current` isn't one of the known sizes (e.g. a stale persisted
  * value), so a click always lands on a valid grid.
@@ -119,15 +144,11 @@ interface ViewportState extends Viewport {
    *  and doesn't travel in the saved/exported file. Ignored in night mode. */
   dayCanvasColor: DayCanvasColor;
   setDayCanvasColor: (color: DayCanvasColor) => void;
-  /** Darken only the CHROME (toolbar, sidebar, menus, popovers) while the map
-   *  stays a day map — a local viewing preference, never a doc property. This is
-   *  deliberately NOT the doc's night mode (MapDoc.darkMode, the moon toggle):
-   *  that repaints the canvas too and travels in the saved file. This flag only
-   *  flips `data-theme` on `.app` (see App.tsx); the canvas palette (themeColors)
-   *  never reads it, so the map renders exactly as the doc defines. Redundant
-   *  when the doc is already a night map (chrome is dark either way). */
-  darkUiInDay: boolean;
-  setDarkUiInDay: (on: boolean) => void;
+  /** Chrome theme (see InterfaceTheme). A persisted local preference that only
+   *  decides `data-theme` on `.app` (chromeIsDark, App.tsx); never touches the
+   *  doc or the canvas palette. */
+  interfaceTheme: InterfaceTheme;
+  setInterfaceTheme: (theme: InterfaceTheme) => void;
 }
 
 /**
@@ -241,8 +262,8 @@ export const useViewportStore = create<ViewportState>()(
       setShowRouteBullets: (showRouteBullets) => set({ showRouteBullets }),
       dayCanvasColor: DEFAULT_DAY_CANVAS_COLOR,
       setDayCanvasColor: (dayCanvasColor) => set({ dayCanvasColor }),
-      darkUiInDay: false,
-      setDarkUiInDay: (darkUiInDay) => set({ darkUiInDay }),
+      interfaceTheme: DEFAULT_INTERFACE_THEME,
+      setInterfaceTheme: (interfaceTheme) => set({ interfaceTheme }),
     }),
     {
       name: 'massimo-viewport',
@@ -268,7 +289,7 @@ export const useViewportStore = create<ViewportState>()(
         showPolygons: s.showPolygons,
         showRouteBullets: s.showRouteBullets,
         dayCanvasColor: s.dayCanvasColor,
-        darkUiInDay: s.darkUiInDay,
+        interfaceTheme: s.interfaceTheme,
         // showNetwork is deliberately absent, alone among the visibility flags:
         // it is the broad one, and hiding it blanks most of a map. That makes it
         // a momentary "get out of my way" toggle rather than a saved preference
@@ -278,10 +299,11 @@ export const useViewportStore = create<ViewportState>()(
       }),
       // zustand's own shallow merge, plus the gate every stored UNION passes on
       // the way in (healPersistedUnion, which is where the rule is written
-      // down). A paper the ladder no longer offers has no way back — no menu
-      // row names it, and nothing but a rehydrate can write it. The flags and
-      // numbers beside it need no such gate: each is read as truthy or run
-      // through a ladder lookup that already falls back (see nextGridSize).
+      // down). A paper or theme the ladder no longer offers has no way back —
+      // no menu row names it, and nothing but a rehydrate can write it. The
+      // flags and numbers beside them need no such gate: each is read as
+      // truthy or run through a ladder lookup that already falls back (see
+      // nextGridSize).
       merge: (persisted, current) => {
         const stored = (persisted ?? {}) as Partial<ViewportState>;
         return {
@@ -292,6 +314,12 @@ export const useViewportStore = create<ViewportState>()(
             current.dayCanvasColor,
             isDayCanvasColor,
             DEFAULT_DAY_CANVAS_COLOR,
+          ),
+          interfaceTheme: healPersistedUnion(
+            stored.interfaceTheme,
+            current.interfaceTheme,
+            isInterfaceTheme,
+            DEFAULT_INTERFACE_THEME,
           ),
         };
       },

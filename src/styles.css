@@ -477,10 +477,10 @@ select option {
   background: var(--border-soft);
   margin: 4px 6px;
 }
-/* Checkable row (e.g. Map → Dark UI in day): a leading check gutter that
-   fills in when checked. The fixed gutter width reserves space in both states so
-   the label sits at the same x whether or not the tick is showing. */
-.menu-panel .menu-item.menu-checkbox-item {
+/* Pick-one row (e.g. Map → Interface theme → Always dark): a leading check
+   gutter that fills in on the chosen row. The fixed gutter width reserves space
+   in both states so every row's label sits at the same x. */
+.menu-panel .menu-item.menu-radio-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1051,7 +1051,8 @@ select option {
   grid-area: canvas;
   position: relative;
   /* background is set inline from theme.canvasBg (see MapCanvas): it tracks the
-     MAP palette, not the chrome's data-theme, so "Dark UI in day" leaves it. */
+     MAP palette, not the chrome's data-theme, so an "Always dark" chrome
+     leaves it. */
   overflow: hidden;
   /* Contain the canvas as one stacking layer. Without this, `position:relative`
      alone is NOT a stacking context, so the item popovers' zIndex:1100 (see
@@ -1077,8 +1078,8 @@ select option {
   justify-content: center;
   /* The three colors are restated as a day/night pair of their own rather than
      read off --text-muted / --accent / --danger. Those answer to the chrome's
-     data-theme, and the strips sit on the CANVAS: "Dark UI in day" would flip
-     them to night ink over a light map, and a dimmed day paper would strand
+     data-theme, and the strips sit on the CANVAS: an "Always dark" chrome would
+     flip them to night ink over a light map, and a dimmed day paper would strand
      them in day ink over a dark one. The host's `data-paper` is the map
      palette's own darkPaper (MapCanvas + theme.ts) — the values below are the
      two themes' tokens, pinned to the paper instead of to the toolbar. */
@@ -3767,13 +3768,14 @@ input.palette-color-name {
 
 /* ───────────────────────── Dark mode (chrome) ─────────────────────────
    The `data-theme="dark"` attribute lands on the .app grid root (see App.tsx)
-   whenever the CHROME should be dark — either the doc is a night map
-   (MapDoc.darkMode, the moon toggle) OR the local "Dark UI in day" preference
-   is on (viewportStore.darkUiInDay). Almost everything flows from the token
-   reassignment below; only genuinely structural rules follow. Nothing here
-   touches the canvas: its background + on-canvas label colors are all handled
-   in the SVG itself (MapCanvas / StationView / LabelView / Grid read the doc's
-   darkMode), so a dark UI can sit over a still-light map. */
+   whenever the CHROME should be dark — the local "Interface theme" preference
+   (viewportStore.interfaceTheme) resolved against the doc's night mode
+   (MapDoc.darkMode, the moon toggle): auto follows the map, light/dark pin it.
+   Almost everything flows from the token reassignment below; only genuinely
+   structural rules follow. Nothing here touches the canvas: its background +
+   on-canvas label colors are all handled in the SVG itself (MapCanvas /
+   StationView / LabelView / Grid read the doc's darkMode), so a dark UI can sit
+   over a still-light map and a light one over a night map. */
 .app[data-theme='dark'] {
   background: #141414;
   color: #e4e4e4;

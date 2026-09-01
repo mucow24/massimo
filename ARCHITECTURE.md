@@ -2429,11 +2429,12 @@ on any mode exit.
   `showPolygons`, `showRouteBullets` default true), plus two **local chrome** preferences:
   `dayCanvasColor: DayCanvasColor`
   (the `DAY_CANVAS_COLORS` ladder `'white'|'gray'|'black'`, default white — the day-mode paper
-  color, dimming glare without touching the map) and `darkUiInDay: boolean` (default false — a
-  chrome-only dark UI while the
-  **map** is still in day mode). The map's own day/night is **not** here — that is `MapDoc.darkMode`
-  (a stale `darkMode` key in an existing persisted blob is ignored); `darkUiInDay` is orthogonal
-  to it, so `App` drives `data-theme` off `chromeDark = darkMode || darkUiInDay`. **Persisted** as
+  color, dimming glare without touching the map) and `interfaceTheme: InterfaceTheme` (the
+  `INTERFACE_THEMES` ladder `'auto'|'light'|'dark'`, default auto — how the **chrome** alone is
+  themed: auto follows the map, light/dark pin it). The map's own day/night is **not** here — that
+  is `MapDoc.darkMode` (a stale `darkMode` key in an existing persisted blob is ignored);
+  `interfaceTheme` is orthogonal to it, so `App` drives `data-theme` off
+  `chromeIsDark(interfaceTheme, darkMode)`. **Persisted** as
   `'massimo-viewport'` (per-browser, **not** per-file) — except `showNetwork`, alone among the
   visibility flags, which `partialize` deliberately omits so a reload never opens onto an
   apparently-empty map. It is the broad one; the narrow toggles each clear a single kind, so a
@@ -2592,10 +2593,11 @@ Six seams cover it, and a seventh rule governs anything new:
   and so is themed in CSS — today only the guide wells. `MapCanvas` stamps it on the host as
   `data-paper="dark"` (beside the background it already sets from `canvasBg`) and the well rules
   key off that, because they cannot use the chrome's `data-theme`: chrome and paper disagree in
-  both directions — **Dark UI in day** darkens the toolbar over a light map, and the gray/black day
-  papers darken the map under a light toolbar. Dimmed day papers therefore set it, alongside their
-  grid override. It does not mean "use the night palette": the SVG ink on a dimmed paper stays day
-  by design, so `accent`, `alignGuide` and `phantomDot` are day values over a gray or black canvas.
+  both directions — an **Always dark** chrome darkens the toolbar over a light map, and the
+  gray/black day papers darken the map under a light toolbar. Dimmed day papers therefore set it,
+  alongside their grid override. It does not mean "use the night palette": the SVG ink on a dimmed
+  paper stays day by design, so `accent`, `alignGuide` and `phantomDot` are day values over a gray
+  or black canvas.
   **No store of its own** — `useThemeColors()` reads `darkMode` off the **doc**, so loading a
   night map paints night with no extra wiring (unlike the camera, which needs an explicit
   `fitCameraToDoc`). Theming is split by what can
@@ -4020,8 +4022,9 @@ the two keys is a stale picture on one side or a stale arrangement on the other.
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
   dark-mode toggles, the **View menu** (`ViewPopover` — the eye button; see Viewport), the
   layering-mode button, Reset view, and the sidebar toggle. The Map menu also carries the two
-  local chrome preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
-  (white/gray/black paper) — which live in `useViewportStore`, not the doc.
+  local chrome preferences — the **Interface theme** submenu (a pick-one radio group:
+  auto / always light / always dark) and the **Day canvas color** submenu (white/gray/black paper)
+  — which live in `useViewportStore`, not the doc.
   Its leftmost element is the **`BrandBadge`** wordmark — the app name drawn as an "M" route
   bullet (`BrandBullet.tsx`) rather than text; alt-click knocks it loose into the easter egg (see
   `BouncingBullet`). Also embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`,

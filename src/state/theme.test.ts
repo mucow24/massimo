@@ -157,7 +157,7 @@ describe('themeColors', () => {
   // The guide wells are HTML chrome sitting ON the paper, so they are themed in
   // CSS and have to read against the paper rather than against the toolbar. The
   // palette answers that one question for them, because BOTH mismatches are
-  // real: "Dark UI in day" darkens the chrome over a light map, and the
+  // real: an "Always dark" chrome darkens the toolbar over a light map, and the
   // gray/black day papers darken the map under a light chrome.
   it('says whether the PAPER is dark — per paper, not per mode', () => {
     expect(themeColors(false).darkPaper).toBe(false);

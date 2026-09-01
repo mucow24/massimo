@@ -119,8 +119,8 @@ export interface ThemeColors {
    * `data-paper` (MapCanvas stamps it from here; styles.css holds the values).
    *
    * They cannot read the chrome's `data-theme`, because the chrome and the
-   * paper disagree in BOTH directions — "Dark UI in day" darkens the toolbar
-   * over a still-light map, and the gray/black day papers darken the map under
+   * paper disagree in BOTH directions — an "Always dark" chrome darkens the
+   * toolbar over a still-light map, and the gray/black day papers darken the map under
    * a still-light toolbar. So the question is answered here, where the papers
    * are, rather than being re-derived from `darkMode` and `dayCanvasColor` at
    * the call site and drifting the next time a paper is added.

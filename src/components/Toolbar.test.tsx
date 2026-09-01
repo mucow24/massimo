@@ -76,7 +76,7 @@ import { saveVersion, newMapId, getPayload, listMaps, listVersions } from '../st
 import type { MapSummary, VersionMeta } from '../state/mapLibrary';
 import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc, useSelection } from '../state/store';
-import { useViewportStore, DAY_CANVAS_COLORS } from '../state/viewportStore';
+import { useViewportStore, DAY_CANVAS_COLORS, INTERFACE_THEMES } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { pickDocSnapshot } from '../state/store';
 import { serialize } from '../model/serialize';
@@ -1883,5 +1883,38 @@ describe('Toolbar — day canvas color', () => {
     // sub-panel item doesn't complete under user-event in jsdom.
     fireEvent.click(screen.getByRole('menuitem', { name: 'Gray' }));
     expect(useViewportStore.getState().dayCanvasColor).toBe('gray');
+  });
+});
+
+describe('Toolbar — interface theme', () => {
+  const openThemes = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Map' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Interface theme' }));
+    return screen.findByRole('menuitemradio', { name: 'Always dark' });
+  };
+
+  // Built from INTERFACE_THEMES, like the paper submenu: one radio row per rung,
+  // in ladder order, with the store's current theme the only checked one.
+  it('offers one checked-or-not row per rung of the ladder, in ladder order', async () => {
+    const user = userEvent.setup();
+    useViewportStore.setState({ interfaceTheme: 'light' });
+    renderToolbar();
+    await openThemes(user);
+    const rows = screen.getAllByRole('menuitemradio');
+    expect(rows.map((r) => r.textContent)).toEqual([
+      'Auto (follows map)',
+      'Always light',
+      'Always dark',
+    ]);
+    expect(rows).toHaveLength(INTERFACE_THEMES.length);
+    expect(rows.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
+  });
+
+  it('writes the picked theme to the store', async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    await openThemes(user);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Always dark' }));
+    expect(useViewportStore.getState().interfaceTheme).toBe('dark');
   });
 });
