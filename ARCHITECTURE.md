@@ -167,8 +167,8 @@ src/
     autoOrient.ts               # rotate a just-added station to the line tangent (flipping 180° when the tangent would render its label upside down — same axis, right-side-up text)
     clipboard.ts                # ClipPayload union + read/write + SVG-href security guard
     svgImport.ts                # import external .svg or png/jpeg raster → intrinsic/decoded
-                                #   size + data URI (+ href security allow-list, + the 5 MB
-                                #   ceiling that bounds what an import adds to the doc)
+                                #   size + data URI (+ href security allow-list, + the 3.5 MB
+                                #   ceiling that keeps an import off the localStorage quota)
 
   geometry/                     # PURE math — world coordinates, no React/store
     vec.ts orientation.ts       # vector primitives; rotation/local↔world; STOP_SIZE=14;
@@ -2231,10 +2231,9 @@ caller's `set()`, so an escaping `QuotaExceededError` would skip the rest of eve
 there on (mode exits, selection updates, group commits) while the doc silently stopped reaching
 storage, a loss only a reload reveals. So the write swallows it, keeps the in-memory doc, drops the
 pending blob rather than re-offering one that cannot fit, and reports through a toast — once per
-run of failures, not per keystroke. The import ceiling (`MAX_IMAGE_IMPORT_BYTES`, 5 MB, in
-[svgImport.ts](src/model/svgImport.ts)) is the other half: it bounds how much an import can add,
-though a near-ceiling file base64-encodes past the quota on its own, leaving the toast path as the
-only report.
+run of failures, not per keystroke. The import ceiling (`MAX_IMAGE_IMPORT_BYTES`, 3.5 MB, in
+[svgImport.ts](src/model/svgImport.ts)) is the other half: it keeps the common cause from reaching
+the doc at all.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:
