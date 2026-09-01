@@ -71,6 +71,47 @@ describe('textLabelAlignRectLocal — horizontal extent is ink, not the pen box'
     expect(r.x1).toBeCloseTo(40, 5);
   });
 
+  it('column mode, right-aligned: the left edge is the column, the right edge hugs ink', () => {
+    // 'Hi' right-flushed in an 80 column: pen at 40 − 20 = 20, ink [22, 38].
+    // The text is flush RIGHT, so that edge drops the side-bearing strip (like
+    // the left edge of a left-aligned column); the empty left half of the
+    // column is still the label's box.
+    const r = textLabelAlignRectLocal(
+      makeTextLabel({ id: 'g', text: 'Hi', align: 'right', fontSize: 16, width: 80 }),
+    );
+    expect(r.x0).toBeCloseTo(-40, 5);
+    expect(r.x1).toBeCloseTo(40 - INSET, 5);
+  });
+
+  it('column mode, centered: flush to neither edge, so the box is the column', () => {
+    const r = textLabelAlignRectLocal(
+      makeTextLabel({ id: 'g', text: 'Hi', align: 'center', fontSize: 16, width: 80 }),
+    );
+    expect(r.x0).toBeCloseTo(-40, 5);
+    expect(r.x1).toBeCloseTo(40, 5);
+  });
+
+  it('column mode, justified: boxed like left-aligned (ink left, column right)', () => {
+    // A one-line paragraph never stretches, so it left-flushes like a ragged
+    // line: pen at -40, ink [-38, -22]. The wrap edge stays on the right.
+    const r = textLabelAlignRectLocal(
+      makeTextLabel({ id: 'g', text: 'Hi', align: 'justify', fontSize: 16, width: 80 }),
+    );
+    expect(r.x0).toBeCloseTo(-40 + INSET, 5);
+    expect(r.x1).toBeCloseTo(40, 5);
+  });
+
+  it('column mode, right-aligned overflow: the box grows past the column on the left', () => {
+    // A 10-glyph unbreakable word (advance 100) in an 80 column, right-flushed:
+    // pen at 40 − 100 = −60, ink [−58, 38] — the box follows the ink out past
+    // the column's left, mirroring the left-aligned overflow on the right.
+    const r = textLabelAlignRectLocal(
+      makeTextLabel({ id: 'g', text: 'Hiiiiiiiii', align: 'right', fontSize: 16, width: 80 }),
+    );
+    expect(r.x0).toBeCloseTo(-60 + INSET, 5);
+    expect(r.x1).toBeCloseTo(40 - INSET, 5);
+  });
+
   it('column mode with no ink at all: the box still spans the authored column', () => {
     // An empty (or all-whitespace) column has no ink to hug, but the column is
     // still authored geometry — the box spans it, so the wrap edge stays

@@ -562,12 +562,25 @@ describe('textLabelAlignCorners', () => {
     expect(br.x).toBeCloseTo(40, 5);
   });
 
-  it('a right-aligned column: ink-hugged left, the wrap width kept on the right', () => {
-    // 'Hi' right-flushed in an 80 column: ink starts at 40 − advance.
+  it('a right-aligned column: the box spans the column, not just the ink', () => {
+    // 'Hi' right-flushed in an 80 column leaves the column's left half empty;
+    // that empty space is still the label's box (the text is flush RIGHT, so
+    // only the right edge hugs ink — coincident with the column right under
+    // jsdom's bearing-free metrics).
     const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, width: 80, align: 'right' });
-    const m = measureTextLabel(label);
     const [tl, , br] = textLabelAlignCorners(label);
-    expect(tl.x).toBeCloseTo(40 - m.lines[0].alignAdvance, 5);
+    expect(tl.x).toBeCloseTo(-40, 5);
+    expect(br.x).toBeCloseTo(40, 5);
+  });
+
+  it('a center-aligned column: the box spans the column on both sides', () => {
+    // Centered text is flush to neither edge, so neither edge hugs ink: the
+    // box IS the authored column.
+    const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, width: 80, align: 'center' });
+    const m = measureTextLabel(label);
+    expect(m.lines[0].alignAdvance).toBeLessThan(80);
+    const [tl, , br] = textLabelAlignCorners(label);
+    expect(tl.x).toBeCloseTo(-40, 5);
     expect(br.x).toBeCloseTo(40, 5);
   });
 
