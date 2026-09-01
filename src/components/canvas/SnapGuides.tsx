@@ -1,6 +1,11 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
-import { formatMeasurement, guideSegmentInBox, type SnapGuide } from '../../geometry/snap';
-import { clipSegmentToRect, midpoint, norm, perp, sub } from '../../geometry/vec';
+import {
+  formatMeasurement,
+  guideLabelSide,
+  guideSegmentInBox,
+  type SnapGuide,
+} from '../../geometry/snap';
+import { clipSegmentToRect, midpoint } from '../../geometry/vec';
 import type { Vec2 } from '../../geometry/vec';
 import type { ViewBox } from './viewportMath';
 import { capCenterDy } from '../../geometry/textMeasure';
@@ -51,8 +56,9 @@ export const LABEL_EDGE_INSET_PX = 24;
  * LOUD one — halo pass, endpoint rings, a fat dash and a bold chip — because
  * something locked and the user has to see it. A `quiet` span is an ambient
  * measurement that rides every frame of a gesture whether or not anything
- * locked (`SnapGuide.quiet`; the guide drag's spacing readout is the one
- * source), so it drops the halo and the rings and thins the rest: it measures
+ * locked (`SnapGuide.quiet`; two sources — the guide drag's spacing readout
+ * and the svg-image resize's dimension readout), so it drops the halo and the
+ * rings and thins the rest: it measures
  * FROM the thing being dragged, and at full chrome two stationary spans read as
  * the subject while the moving guide reads as incidental ink — which is what
  * made pulling a vertical guide out feel broken. It stays a real readout
@@ -248,14 +254,11 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
         // Position the label above the anchor point (see labelAt — the
         // midpoint of the span's visible run), offset perpendicular by a small
         // fixed screen-pixel amount so it sits clear of the dotted line.
-        // "Above" = the side toward smaller y (screen up) — the perpendicular
-        // flips to keep the label on top regardless of the line's direction.
+        // "Above" = the side toward smaller y (screen up) for a non-vertical
+        // span; a vertical one sits beside it, on the side the ordering picks
+        // (guideLabelSide — shared with the svg-image dimension readout).
         const { x: mx, y: my } = labelAt(g.from, g.to);
-        let { x: px, y: py } = perp(norm(sub(g.to, g.from)));
-        if (py > 0) {
-          px = -px;
-          py = -py;
-        }
+        const { x: px, y: py } = guideLabelSide(g.from, g.to);
         const reg = g.quiet ? REGISTER.quiet : REGISTER.loud;
         const offset = reg.labelGap / zoom;
         const lx = mx + px * offset;

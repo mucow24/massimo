@@ -1,6 +1,6 @@
-import { add, sub, rotate, rotatedRectCorners, type Vec2 } from './vec';
+import { add, dot, norm, sub, rotate, rotatedRectCorners, type Vec2 } from './vec';
 import { polygonSnapAnchor } from './polygon';
-import { formatMeasurement, type SnapGuide } from './snap';
+import { formatMeasurement, guideLabelSide, type SnapGuide } from './snap';
 import type { SvgImage } from '../model/types';
 
 // The geometric subset of an SvgImage the pure transform helpers need. Keeping
@@ -136,22 +136,45 @@ export function rotateSvgImageTo(img: SvgImageGeom, pointerWorld: Vec2, shift: b
 }
 
 // The live dimension readout for a resize in flight: two label-only ambient
-// measurements (see SnapGuide.labelOnly/quiet) riding the image's rotated top
-// and right edges, labeled with the current width and height. The orderings
-// are chosen for SnapGuides' label placement (midpoint, offset up the flipped
-// perpendicular) so on an axis-aligned image both numbers land OUTSIDE the
-// box: TL→TR flips its perpendicular up, above the top edge; BR→TR runs the
-// right edge upward, whose unflipped perpendicular points east.
+// measurements (see SnapGuide.labelOnly/quiet), the width riding a horizontal
+// (local) edge and the height a vertical one, labeled with the current values.
+//
+// Which edge of each pair carries its number — and in which endpoint order —
+// is chosen per rotation so the label always lands OUTSIDE the box. Each
+// dimension offers its two opposite edges (outward normals negatives of each
+// other) in both orderings, and the first candidate whose predicted label
+// side ({@link guideLabelSide} — the SAME rule SnapGuides places with)
+// coincides with its edge's outward normal wins. One always does: for a
+// non-vertical edge pair the flipped-up side agrees with exactly one of the
+// two normals, and for a vertical pair the ordering steers the side.
 export function svgImageDimensionGuides(box: SvgImageBox, rotation: number): SnapGuide[] {
-  const [tl, tr, br] = svgImageCorners({ ...box, rotation });
-  const dim = (from: Vec2, to: Vec2, value: number): SnapGuide => ({
-    from,
-    to,
+  const [tl, tr, br, bl] = svgImageCorners({ ...box, rotation });
+  const pick = (candidates: Array<{ from: Vec2; to: Vec2; out: Vec2 }>) =>
+    candidates.find((c) => dot(guideLabelSide(c.from, c.to), c.out) > 0) ?? candidates[0];
+  const up = norm(sub(tl, bl)); // outward normal of the local top edge
+  const down = { x: -up.x, y: -up.y };
+  const east = norm(sub(tr, tl)); // outward normal of the local right edge
+  const west = { x: -east.x, y: -east.y };
+  const width = pick([
+    { from: tl, to: tr, out: up },
+    { from: bl, to: br, out: down },
+    { from: tr, to: tl, out: up },
+    { from: br, to: bl, out: down },
+  ]);
+  const height = pick([
+    { from: br, to: tr, out: east },
+    { from: bl, to: tl, out: west },
+    { from: tr, to: br, out: east },
+    { from: tl, to: bl, out: west },
+  ]);
+  const dim = (e: { from: Vec2; to: Vec2 }, value: number): SnapGuide => ({
+    from: e.from,
+    to: e.to,
     label: formatMeasurement(value),
     quiet: true,
     labelOnly: true,
   });
-  return [dim(tl, tr, box.width), dim(br, tr, box.height)];
+  return [dim(width, box.width), dim(height, box.height)];
 }
 
 // The whole-image move snap anchor: the highest-then-leftmost ROTATED corner,

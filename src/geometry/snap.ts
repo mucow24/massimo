@@ -8,7 +8,7 @@ import type {
   StopCell,
 } from '../model/types';
 import type { Vec2 } from './vec';
-import { cross, SQRT2_2 } from './vec';
+import { cross, norm, perp, sub, SQRT2_2 } from './vec';
 import { rotateBy, stationDirToWorld, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
 import { stopPosWorld } from './interlining';
@@ -258,6 +258,20 @@ export interface SnapGuide {
 export function formatMeasurement(value: number): string {
   const text = value.toFixed(1);
   return text === '-0.0' ? '0.0' : text;
+}
+
+/** The side of a from→to span its measurement label sits on: the unit
+ *  perpendicular, flipped to keep the label toward screen-up (smaller y) for
+ *  any non-vertical span — a VERTICAL span keeps its raw perpendicular, so the
+ *  endpoint ordering chooses which side (east for a downward span). The one
+ *  home for the rule: `SnapGuides` places every labeled span with it, and
+ *  `svgImageDimensionGuides` picks which box edge carries each dimension by
+ *  predicting it. The vertical test tolerates FP fuzz: a rotated-rect edge at
+ *  90° comes off sin/cos with ~1e-16 residue, and an exact `> 0` flip would
+ *  make the label's side depend on that noise instead of on the ordering. */
+export function guideLabelSide(from: Vec2, to: Vec2): Vec2 {
+  const p = perp(norm(sub(to, from)));
+  return p.y > 1e-9 ? { x: -p.x, y: -p.y } : p;
 }
 
 /** The same register as a NUMBER, for a numeric field that does its own text

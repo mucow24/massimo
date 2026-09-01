@@ -2906,9 +2906,10 @@ bold chip — while a span flagged `quiet` (an AMBIENT measurement, riding every
 whether or not anything locked; the guide drag's spacing readout and the svg-image resize's
 width × height readout) drops the halo and the rings and thins the line and its chip. Ambient
 chrome at engagement volume claims a lock that never happened, and it out-shouts the very thing
-the span measures FROM. The resize readout's spans additionally carry `labelOnly` — they are the
-image's own top and right edges (`svgImageDimensionGuides`), which the selection box already
-outlines, so only the label paints, never the span. Every live measurement
+the span measures FROM. The resize readout's spans additionally carry `labelOnly` — they are two
+of the image's own edges (`svgImageDimensionGuides`, which picks each dimension's edge per
+rotation so the number lands outside the box), already outlined by the selection box, so only the
+label paints, never the span. Every live measurement
 readout — those guide labels, the Ctrl-drag spacing, the engaged guide's coordinate chip, the
 circle-diameter chip — speaks one format, `formatMeasurement`: one decimal place, the trailing
 `.0` kept so a number never changes width as a drag crosses a unit boundary. The coordinate
