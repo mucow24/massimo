@@ -19,12 +19,12 @@ export const RASTER_IMPORT_MIMES = ['image/png', 'image/jpeg'] as const;
  * The largest image file we will pull into a map. An imported image lives in
  * the document as an inline data URI, so it is re-serialized into localStorage
  * on every edit (a ~5MB origin quota, and base64 inflates the bytes by a third
- * on the way in) and travels inside every exported file. Without a ceiling a
- * typical phone photo pushes the persisted doc past the quota and the map
- * silently stops reaching storage — so the gate is on BYTES, not just on the
- * mime type.
+ * on the way in) and travels inside every exported file. 3.5 MB is the most
+ * the quota can afford: it encodes to ~4.7MB, leaving room for the rest of
+ * the doc, while anything bigger risks the persisted doc silently failing to
+ * reach storage — so the gate is on BYTES, not just on the mime type.
  */
-export const MAX_IMAGE_IMPORT_BYTES = 2 * 1024 * 1024;
+export const MAX_IMAGE_IMPORT_BYTES = 3.5 * 1024 * 1024;
 
 /**
  * Whether a chosen image file is too big to live inside a document. Callers
