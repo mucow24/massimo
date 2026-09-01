@@ -6,6 +6,7 @@ import {
   resizeSvgImageCorner,
   resizeSvgImageEdge,
   rotateSvgImageTo,
+  svgImageDimensionGuides,
   svgImageSnapAnchor,
   SVG_IMAGE_MIN_SIZE,
   type SvgImageGeom,
@@ -146,5 +147,34 @@ describe('svgImageSnapAnchor', () => {
     // 90°: corners TL=(30,-50), TR=(30,50), BR=(-30,50), BL=(-30,-50).
     // Highest (min y) = -50 at TL and BL; leftmost wins → BL=(-30,-50).
     near(svgImageSnapAnchor(base({ rotation: 90 })), { x: -30, y: -50 });
+  });
+});
+
+describe('svgImageDimensionGuides', () => {
+  it('rides the top edge with the width and the right edge with the height', () => {
+    const g = svgImageDimensionGuides({ x: 10, y: 0, width: 120, height: 60 }, 0);
+    expect(g).toHaveLength(2);
+    // Width: TL → TR, so the flipped perpendicular puts the label ABOVE.
+    near(g[0].from, { x: -50, y: -30 });
+    near(g[0].to, { x: 70, y: -30 });
+    expect(g[0].label).toBe('120.0');
+    // Height: BR → TR (upward), whose unflipped perpendicular points east.
+    near(g[1].from, { x: 70, y: 30 });
+    near(g[1].to, { x: 70, y: -30 });
+    expect(g[1].label).toBe('60.0');
+    for (const d of g) {
+      expect(d.quiet).toBe(true);
+      expect(d.labelOnly).toBe(true);
+    }
+  });
+
+  it('rides the ROTATED edges when the image is rotated', () => {
+    const box = { x: 0, y: 0, width: 100, height: 60 };
+    const c = svgImageCorners({ ...box, rotation: 90 });
+    const g = svgImageDimensionGuides(box, 90);
+    near(g[0].from, c[0]);
+    near(g[0].to, c[1]);
+    near(g[1].from, c[2]);
+    near(g[1].to, c[1]);
   });
 });

@@ -1,5 +1,6 @@
 import { add, sub, rotate, rotatedRectCorners, type Vec2 } from './vec';
 import { polygonSnapAnchor } from './polygon';
+import { formatMeasurement, type SnapGuide } from './snap';
 import type { SvgImage } from '../model/types';
 
 // The geometric subset of an SvgImage the pure transform helpers need. Keeping
@@ -132,6 +133,25 @@ export function rotateSvgImageTo(img: SvgImageGeom, pointerWorld: Vec2, shift: b
   const dy = pointerWorld.y - img.y;
   const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
   return normalizeRotation(snapAngle(deg, shift));
+}
+
+// The live dimension readout for a resize in flight: two label-only ambient
+// measurements (see SnapGuide.labelOnly/quiet) riding the image's rotated top
+// and right edges, labeled with the current width and height. The orderings
+// are chosen for SnapGuides' label placement (midpoint, offset up the flipped
+// perpendicular) so on an axis-aligned image both numbers land OUTSIDE the
+// box: TL→TR flips its perpendicular up, above the top edge; BR→TR runs the
+// right edge upward, whose unflipped perpendicular points east.
+export function svgImageDimensionGuides(box: SvgImageBox, rotation: number): SnapGuide[] {
+  const [tl, tr, br] = svgImageCorners({ ...box, rotation });
+  const dim = (from: Vec2, to: Vec2, value: number): SnapGuide => ({
+    from,
+    to,
+    label: formatMeasurement(value),
+    quiet: true,
+    labelOnly: true,
+  });
+  return [dim(tl, tr, box.width), dim(br, tr, box.height)];
 }
 
 // The whole-image move snap anchor: the highest-then-leftmost ROTATED corner,

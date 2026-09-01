@@ -234,10 +234,15 @@ export interface SnapGuide {
    *  whether or not anything engaged, rather than the feedback for a snap that
    *  locked. `SnapGuides` paints it in a quieter register — no halo pass, no
    *  endpoint rings, a thinner line and a smaller chip — because such a span
-   *  measures FROM the thing being dragged and must not outshout it. The guide
-   *  drag's spacing readout is the one source (see {@link
-   *  guideNeighbourReadout}). */
+   *  measures FROM the thing being dragged and must not outshout it. Two
+   *  sources: the guide drag's spacing readout (see {@link
+   *  guideNeighbourReadout}) and the svg-image resize dimension readout. */
   quiet?: boolean;
+  /** Set on a pure READOUT: the span exists only to place the label (midpoint
+   *  + perpendicular) and is never inked — no line, no halo, no rings. The
+   *  svg-image resize dimension readout is the source: its spans are the
+   *  image's own edges, which the selection box already outlines. */
+  labelOnly?: boolean;
 }
 
 /** How every live readout renders a world-unit measurement: one decimal place.
@@ -671,6 +676,7 @@ export function snapGuidesEqual(a: SnapGuide[], b: SnapGuide[]): boolean {
     if (ga.label !== gb.label) return false;
     if (ga.alignGuideId !== gb.alignGuideId) return false;
     if (ga.quiet !== gb.quiet) return false;
+    if (ga.labelOnly !== gb.labelOnly) return false;
   }
   return true;
 }

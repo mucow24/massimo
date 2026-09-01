@@ -8,6 +8,7 @@ import {
   resizeSvgImageEdge,
   rotateSvgImageTo,
   svgImageCorners,
+  svgImageDimensionGuides,
   svgImageSnapAnchor,
   type SvgImageGeom,
 } from '../../geometry/svgImage';
@@ -262,7 +263,9 @@ export function useSvgImageDrag(
           if (Math.hypot(corner.x - pointer.x, corner.y - pointer.y) > 1e-6) guides = [];
         }
         updateSvgImage(rz.id, box);
-        setSvgImageSnapGuides(guides);
+        // The live width × height readout rides the box's edges every frame of
+        // the resize, alongside whatever alignment guides the snap produced.
+        setSvgImageSnapGuides([...guides, ...svgImageDimensionGuides(box, rz.start.rotation)]);
       }
     }
 

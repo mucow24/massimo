@@ -149,7 +149,8 @@ describe('useSvgImageDrag — resize snap gate', () => {
     move(r, pointerEvent({ clientX: 73, clientY: 3 }));
 
     expect(useDoc.getState().svgImages.i0.width).toBeCloseTo(123, 5);
-    expect(r.current.svgImageSnapGuides).toHaveLength(0);
+    // Only the ever-present dimension readout — no alignment guide.
+    expect(r.current.svgImageSnapGuides.filter((g) => !g.labelOnly)).toHaveLength(0);
     up(r, pointerEvent({ clientX: 73, clientY: 3 }));
   });
 
@@ -167,7 +168,7 @@ describe('useSvgImageDrag — resize snap gate', () => {
     move(r, pointerEvent({ clientX: 73, clientY: 3 }));
 
     expect(useDoc.getState().svgImages.i0.width).toBeCloseTo(120, 5); // |70 - (-50)|
-    expect(r.current.svgImageSnapGuides).toHaveLength(1);
+    expect(r.current.svgImageSnapGuides.filter((g) => !g.labelOnly)).toHaveLength(1);
     up(r, pointerEvent({ clientX: 73, clientY: 3 }));
   });
 
@@ -186,8 +187,53 @@ describe('useSvgImageDrag — resize snap gate', () => {
     move(r, pointerEvent({ clientX: 118, clientY: 42 }));
 
     expect(useDoc.getState().svgImages.i0.width).toBeCloseTo(170, 5);
-    expect(r.current.svgImageSnapGuides).toHaveLength(0);
+    expect(r.current.svgImageSnapGuides.filter((g) => !g.labelOnly)).toHaveLength(0);
     up(r, pointerEvent({ clientX: 118, clientY: 42 }));
+  });
+});
+
+describe('useSvgImageDrag — resize dimension readout', () => {
+  const readouts = (r: Result) => r.current.svgImageSnapGuides.filter((g) => g.labelOnly);
+
+  it('shows the live width and height while an edge resize is in flight', () => {
+    seed({ rotation: 0 }); // 100×60, left edge fixed at x=-50
+    const r = render();
+    act(() => r.current.onSvgEdgePointerDown('i0', 1, pointerEvent({ clientX: 0, clientY: 0 })));
+    // Pointer world (73,0) → grid-snap (70,0) → width 120, height unchanged.
+    move(r, pointerEvent({ clientX: 73, clientY: 0 }));
+    const dims = readouts(r);
+    expect(dims.map((g) => g.label)).toEqual(['120.0', '60.0']);
+    // Ambient register: it rides every frame whether or not a snap engaged.
+    expect(dims.every((g) => g.quiet)).toBe(true);
+    // Width rides the top edge (TL→TR of the resized box, center x=10),
+    // height the right edge (BR→TR) — both labels land outside the box.
+    expect(dims[0].from).toEqual({ x: -50, y: -30 });
+    expect(dims[0].to).toEqual({ x: 70, y: -30 });
+    expect(dims[1].from).toEqual({ x: 70, y: 30 });
+    expect(dims[1].to).toEqual({ x: 70, y: -30 });
+    up(r, pointerEvent({ clientX: 73, clientY: 0 }));
+    expect(r.current.svgImageSnapGuides).toHaveLength(0);
+  });
+
+  it('shows both dimensions during a corner resize (aspect-locked)', () => {
+    setModes({ line: false, all: 'off', grid: 'off' });
+    seed(); // 100×60, BR corner at (50,30), anchor TL (-50,-30)
+    const r = render();
+    act(() => r.current.onSvgCornerPointerDown('i0', 2, pointerEvent({ clientX: 0, clientY: 0 })));
+    // rawW 170 drives (rawH only 30) → 170 × 102.
+    move(r, pointerEvent({ clientX: 120, clientY: 0 }));
+    expect(readouts(r).map((g) => g.label)).toEqual(['170.0', '102.0']);
+    up(r, pointerEvent({ clientX: 120, clientY: 0 }));
+    expect(r.current.svgImageSnapGuides).toHaveLength(0);
+  });
+
+  it('a whole-image move shows no dimension readout', () => {
+    seed();
+    const r = render();
+    act(() => r.current.onSvgImagePointerDown('i0', pointerEvent({ clientX: 100, clientY: 100 })));
+    move(r, pointerEvent({ clientX: 143, clientY: 143 }));
+    expect(readouts(r)).toHaveLength(0);
+    up(r, pointerEvent({ clientX: 143, clientY: 143 }));
   });
 });
 

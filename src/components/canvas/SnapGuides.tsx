@@ -152,7 +152,8 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
         {guides.map((g, i) =>
           // The quiet register has no halo pass and no endpoint rings at all —
           // the blur and the two blobs are most of what made these spans shout.
-          g.quiet ? null : (
+          // A labelOnly readout has no span ink of any kind.
+          g.quiet || g.labelOnly ? null : (
             <g key={'halo' + i}>
               <line
                 x1={g.from.x}
@@ -201,6 +202,9 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
         })}
       </g>
       {guides.map((g, i) => {
+        // A labelOnly readout's span exists only to place its label below —
+        // inking it would double-draw the edge it rides (see SnapGuide).
+        if (g.labelOnly) return null;
         const reg = g.quiet ? REGISTER.quiet : REGISTER.loud;
         return (
           <line
