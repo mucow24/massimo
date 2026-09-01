@@ -4394,8 +4394,8 @@ synchronous clone (see UI chrome). So step 1's "clone, don't rebuild" is a clone
 live canvas is never held in export state across the async work.
 
 `buildExportSvg(source, {background, pixelScale, fitBox?, outlineText?})` (async — awaits the tracer's
-font fetches; `fitBox` overrides `pixelScale`, `outlineText: false` leaves text as `<text>` for callers
-that don't need the font work, such as the library thumbnail):
+font fetches; `fitBox` overrides `pixelScale`, `outlineText: false` leaves text as `<text>` — a jsdom
+test escape hatch; every production caller, the library thumbnail included, outlines):
 
 1. **Clone, don't rebuild** (`source.cloneNode(true)`) — label/tag geometry is measured against
    the _live_ DOM, so cloning is the only faithful capture.
@@ -4611,9 +4611,9 @@ non-text gaps svg2pdf/jsPDF can't bridge are closed here:
    Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF stays out of the initial
    bundle; `buildExportSvg` likewise `import()`s `pdfGlyphs` inside its outlining branch, which is
    what keeps opentype.js out of the entry chunk — a static import there would drag it in via the
-   toolbar, and the thumbnail path never needs it at all. The cost of splitting is that a page
-   outliving its build dies at every lazy `import()`, which the toolbar's `errorText` answers with
-   `STALE_BUILD_MESSAGE` ([staleBuild.ts](src/util/staleBuild.ts)).
+   toolbar; this way it loads on the first save or export instead. The cost of splitting is that a
+   page outliving its build dies at every lazy `import()`, which the toolbar's `errorText` answers
+   with `STALE_BUILD_MESSAGE` ([staleBuild.ts](src/util/staleBuild.ts)).
 
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
 `withAlpha`, `desaturateColor`, plus the RGBA surface added with the react-colorful

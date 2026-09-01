@@ -75,6 +75,7 @@ export default [
         SVGGraphicsElement: 'readonly',
         SVGRectElement: 'readonly',
         HTMLCanvasElement: 'readonly',
+        HTMLImageElement: 'readonly',
         CanvasRenderingContext2D: 'readonly',
         indexedDB: 'readonly',
         IDBDatabase: 'readonly',

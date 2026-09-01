@@ -104,7 +104,7 @@ test('a saved map survives a Clear and comes back from the library', async ({ pa
   await expect(page.locator('[data-station-id]')).toHaveCount(4);
 });
 
-test('a version thumbnail is a real raster within the 240×180 box', async ({ page }) => {
+test('a version thumbnail is a real raster within the 480×360 box', async ({ page }) => {
   await seedAndOpen(page, fourInLine);
   await saveToLibrary(page);
   await openLibrary(page);
@@ -118,8 +118,8 @@ test('a version thumbnail is a real raster within the 240×180 box', async ({ pa
   }));
   expect(size.w).toBeGreaterThan(0);
   expect(size.h).toBeGreaterThan(0);
-  expect(size.w).toBeLessThanOrEqual(240);
-  expect(size.h).toBeLessThanOrEqual(180);
+  expect(size.w).toBeLessThanOrEqual(480);
+  expect(size.h).toBeLessThanOrEqual(360);
 });
 
 test('the toolbar pill shows the version each save mints', async ({ page }) => {

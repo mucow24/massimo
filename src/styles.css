@@ -3131,9 +3131,10 @@ button.dialog-sort {
 .map-thumb-blank {
   background: var(--inset-bg);
 }
-/* The hover preview: the stored capture at full size (up to 240×180) on a
-   popover-family card. Radix's popper positions it fixed, so it escapes the
-   scroll column; the z-index ranks it inside the backdrop's stacking context. */
+/* The hover preview: the stored capture (up to 480×360) shown at half size, so
+   the card reads crisp on HiDPI, on a popover-family card. Radix's popper
+   positions it fixed, so it escapes the scroll column; the z-index ranks it
+   inside the backdrop's stacking context. */
 .map-thumb-preview {
   background: var(--surface);
   border: 1px solid var(--border-soft);

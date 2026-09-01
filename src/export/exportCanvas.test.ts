@@ -160,7 +160,7 @@ describe('buildExportSvg', () => {
   // glyph→path tracing needs getStartPositionOfChar, which jsdom lacks, so it's
   // covered by e2e; here we pin the format-level contract that survives jsdom.
   describe('text outlining', () => {
-    it('leaves text as <text> when outlineText is false (thumbnail path)', async () => {
+    it('leaves text as <text> when outlineText is false (the jsdom escape hatch)', async () => {
       restore = stubGetBBox({ x: 0, y: 0, width: 100, height: 80 });
       const svg = makeSourceSvg('<text x="0" y="0">Canal St</text>');
       const { svg: out } = await buildExportSvg(svg, { background: '#fff', outlineText: false });

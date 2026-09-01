@@ -101,8 +101,8 @@ export interface ExportSvg {
  *
  * `fitBox` scales the result down to fit within a box (never up) and wins over
  * `pixelScale`. `outlineText: false` leaves text as `<text>` (no font work) —
- * used by the tiny library thumbnail, which rasterizes at 240px where the
- * fallback face reads the same and outlining every glyph would just cost.
+ * an escape hatch for jsdom tests, where the tracer's text APIs don't exist;
+ * every production caller outlines.
  */
 export async function buildExportSvg(
   source: SVGSVGElement,
@@ -163,7 +163,7 @@ export async function buildExportSvg(
     // The clone lays out detached from the page stylesheet, so the font
     // declarations it inherited on screen have to be restated here. They govern
     // the pen positions the outline tracer measures, as well as the glyphs a
-    // left-as-<text> export (the thumbnail) renders.
+    // left-as-<text> export (outlineText: false) renders.
     clone.setAttribute('font-family', FONT_STACK);
     // A STYLE, not a presentation attribute: font-feature-settings is not one,
     // so an attribute would silently do nothing and the clone would shape with
@@ -209,8 +209,12 @@ export async function exportCanvasSvg(
   downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), `${basename}.svg`);
 }
 
-/** Largest a library thumbnail may be; the map fits inside, keeping its aspect. */
-export const THUMB_BOX = { w: 240, h: 180 };
+/**
+ * Largest a library thumbnail may be; the map fits inside, keeping its aspect.
+ * 2× the hover card's 240×180 CSS box, so the card shows a crisp raster on
+ * HiDPI displays (the row's postage stamp needed far less than 240 already).
+ */
+export const THUMB_BOX = { w: 480, h: 360 };
 
 /**
  * Rasterize an export SVG string onto a canvas at exactly `width`×`height`.
@@ -219,9 +223,8 @@ export const THUMB_BOX = { w: 240, h: 180 };
  * returned canvas, which owns them outright, so the URL's job ends here.
  *
  * `decode()` rather than `onload`: it gates on the image being fully ready to
- * PAINT, not merely fetched. There are no fonts to wait on in the PNG path
- * (text arrives already outlined) and none worth waiting on in the thumbnail
- * path, so this is the whole readiness contract.
+ * PAINT, not merely fetched. There are no fonts to wait on — text arrives
+ * already outlined in both callers — so this is the whole readiness contract.
  *
  * No context scaling: callers bake any scale into the SVG's own width/height
  * (viewBox unchanged), so the vector rasterizes crisply at full resolution and
@@ -254,9 +257,10 @@ async function rasterizeSvg(
  *
  * Captured at save time because that is the only time it is possible: MapCanvas
  * takes no props and reads singleton stores, so a document that isn't on screen
- * cannot be rendered. Text is deliberately not outlined — at 240px the fallback
- * face reads the same, and tracing every glyph would just cost. The active
- * theme's background bakes in.
+ * cannot be rendered. Text is outlined like every other export — inside the
+ * rasterizer's `<img>` the app's webfonts don't exist, so `<text>` would render
+ * in whatever the OS falls back to, visibly not the map's face at this size.
+ * The active theme's background bakes in.
  *
  * Throws on an empty canvas (via buildExportSvg), which callers treat as
  * "no thumbnail" rather than a failed save.
@@ -265,7 +269,6 @@ export async function captureThumbnail(source: SVGSVGElement, background: string
   const { svg, width, height } = await buildExportSvg(source, {
     background,
     fitBox: THUMB_BOX,
-    outlineText: false,
   });
   return (await rasterizeSvg(svg, width, height)).toDataURL('image/png');
 }

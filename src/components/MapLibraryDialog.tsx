@@ -119,10 +119,11 @@ function StarToggle({
 }
 
 /**
- * A row's thumbnail. Hovering it raises the stored capture at full size (the
- * row shows a postage stamp; the raster is up to 240×180) in a hover-card
- * beside the row. Not portaled — the card must stay inside `.app` for the
- * design tokens and the dark-mode reassignment to apply.
+ * A row's thumbnail. Hovering it raises the stored capture (the row shows a
+ * postage stamp; the raster is up to 480×360, shown at half size so the card
+ * stays crisp on HiDPI) in a hover-card beside the row. Not portaled — the
+ * card must stay inside `.app` for the design tokens and the dark-mode
+ * reassignment to apply.
  */
 function Thumb({ src }: { src?: string }) {
   if (!src) return <span className="map-thumb map-thumb-blank" aria-hidden="true" />;
