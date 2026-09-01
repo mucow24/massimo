@@ -285,16 +285,21 @@ export function textLabelAlignRectLocal(label: TextLabel): AABB {
   const ink = blockInkExtentX(m, label.align);
   const left = ink ? ink.left : -m.width / 2;
   const right = ink ? ink.right : m.width / 2;
-  // A fixed-width COLUMN is authored geometry, so its wrap edge must stay
-  // visible: the RIGHT edge reaches at least the column's right (m.width is
-  // pinned to it; further if an unbreakable word overflows the wrap). The
-  // LEFT edge stays on the ink like every other label — a column must not
-  // reintroduce the side-bearing strip the alignment box exists to remove.
+  // A fixed-width COLUMN is authored geometry, so the box spans it (m.width is
+  // pinned to the column; further where an unbreakable word overflows the
+  // wrap): the empty half of a right-aligned or centered column is still the
+  // label. The one exception is an edge the text is FLUSH against — left for
+  // left/justify, right for right — which stays on the ink like every other
+  // label, so a column never reintroduces the side-bearing strip the
+  // alignment box exists to remove. (Justify counts as left-flush only: its
+  // ragged last line never reaches the right edge, and the wrap edge must.)
   const column = (label.width ?? 0) > 0;
+  const flushLeft = label.align === 'left' || label.align === 'justify';
+  const flushRight = label.align === 'right';
   return {
-    x0: left,
+    x0: column && !flushLeft ? Math.min(left, -m.width / 2) : left,
     y0: -m.height / 2 + first.baselineFromTop - CAP_FRACTION * first.maxFontSize,
-    x1: column ? Math.max(right, m.width / 2) : right,
+    x1: column && !flushRight ? Math.max(right, m.width / 2) : right,
     y1: -m.height / 2 + last.baselineFromTop,
   };
 }
