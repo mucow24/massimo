@@ -3433,6 +3433,33 @@ const RECORD_COLLECTIONS = [
 ] as const;
 
 /**
+ * The station numbers a file is REFUSED over when it carries one that is not
+ * finite, grouped by the shape each sits on. Read by `docShapeError` below —
+ * and exported because `auditDoc` has to put the same question to the LIVE
+ * doc.
+ *
+ * These are the harshest numbers in the document. A NaN elsewhere costs the
+ * record that carries it (step 6c drops the decoration); a NaN here costs the
+ * whole MAP, because the gate refuses the file rather than invent a
+ * coordinate. So an export door that writes the bytes without noticing hands
+ * back a file that will never open again — which is why the audit reads this
+ * list instead of restating it, and why `docAudit.test.ts` pins that the two
+ * sides agree field for field.
+ *
+ * `label.offsetPerp` is here beside `label.offset` because it does the same
+ * job on the other axis: both displace the painted text from its cell, so a
+ * NaN in either is the same vanished label.
+ */
+export const STATION_FINITE_FIELDS = {
+  /** On the station record itself. */
+  station: ['x', 'y', 'rotation'],
+  /** On each entry of `stops`. */
+  stop: ['row', 'col'],
+  /** On `label`. */
+  label: ['row', 'col', 'rotation', 'offset', 'offsetPerp'],
+} as const;
+
+/**
  * Type-c gate over the RAW doc: substance that is PRESENT but of the wrong
  * shape refuses the whole file — silently dropping a station or inventing a
  * coordinate would hand back a plausible-looking map missing content, the
@@ -3452,17 +3479,22 @@ function docShapeError(doc: Record<string, unknown>): string | null {
     for (const id of Object.keys(doc.stations)) {
       const st = doc.stations[id];
       if (!isRecord(st)) return `station "${id}" is not an object`;
-      if (!finiteField(st.x)) return `station "${id}": x is not a finite number`;
-      if (!finiteField(st.y)) return `station "${id}": y is not a finite number`;
+      for (const f of STATION_FINITE_FIELDS.station) {
+        // `x`/`y` are required outright — an absent coordinate leaves a
+        // station as unplaceable as a NaN one does. The rest are judged only
+        // when the file carries them: legacy saves predate `rotation`, which
+        // heals onto the octant ring at step 3.
+        const required = f === 'x' || f === 'y';
+        if ((required || f in st) && !finiteField(st[f]))
+          return `station "${id}": ${f} is not a finite number`;
+      }
       if ('name' in st && typeof st.name !== 'string')
         return `station "${id}": name is not a string`;
-      if ('rotation' in st && !finiteField(st.rotation))
-        return `station "${id}": rotation is not a finite number`;
       if ('stops' in st) {
         if (!Array.isArray(st.stops)) return `station "${id}": stops is not an array`;
         for (const stop of st.stops) {
           if (!isRecord(stop)) return `station "${id}": a stop entry is not an object`;
-          for (const f of ['row', 'col'] as const) {
+          for (const f of STATION_FINITE_FIELDS.stop) {
             if (f in stop && !finiteField(stop[f]))
               return `station "${id}": a stop ${f} is not a finite number`;
           }
@@ -3470,7 +3502,7 @@ function docShapeError(doc: Record<string, unknown>): string | null {
       }
       if ('label' in st) {
         if (!isRecord(st.label)) return `station "${id}": label is not an object`;
-        for (const f of ['row', 'col', 'rotation', 'offset'] as const) {
+        for (const f of STATION_FINITE_FIELDS.label) {
           if (f in st.label && !finiteField(st.label[f]))
             return `station "${id}": label ${f} is not a finite number`;
         }

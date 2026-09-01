@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { auditDoc } from './docAudit';
-import { parse, serialize } from './serialize';
+import { STATION_FINITE_FIELDS, parse, serialize } from './serialize';
 import * as T from './transforms';
 import {
   makeDoc,
@@ -16,7 +16,7 @@ import {
   makeTextLabel,
   makeTransfer,
 } from '../test/fixtures';
-import type { MapDoc } from './types';
+import type { MapDoc, RegionAnchor } from './types';
 
 // A small canonical two-station doc every mutation below corrupts from.
 const cleanDoc = (): MapDoc =>
@@ -558,5 +558,127 @@ describe('auditDoc', () => {
     expect(r.doc.lines.T.stations).toEqual(['s1', 's2', 's3']);
     expect(r.doc.lines.T.edges).toEqual(['s1|s2']);
     expect(r.doc.stations.s2.id).toBe('s2');
+  });
+});
+
+/**
+ * The station numbers are the load path's HARSHEST case, and the one the
+ * audit reached least far into.
+ *
+ * A non-finite number on a station does not drop that station the way step 6c
+ * drops a decoration — it trips step 1's shape gate (`docShapeError`) and
+ * refuses the WHOLE FILE. So a writer that NaNs a label offset ships a map
+ * whose export door says nothing and whose file will not open at all, on any
+ * future load, with every other station in it. `STATION_FINITE_FIELDS` is the
+ * gate's own list; the audit reads it rather than restating it, and the sweep
+ * below pins that the two agree field for field.
+ */
+describe('auditDoc: the station numbers the file gate refuses over', () => {
+  /** A station carrying every field the gate judges, so each can be NaN'd. */
+  const stationDoc = (): MapDoc =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('l1')] }),
+        makeStation({ id: 's2', x: 100, stops: [makeStop('l1')] }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['s1', 's2'] })],
+      styles: Object.values(T.DEFAULT_STYLES),
+    });
+
+  /** NaN one gated field, wherever on the station it sits. */
+  const nan = (doc: MapDoc, shape: 'station' | 'stop' | 'label', field: string): void => {
+    const st = doc.stations.s1;
+    if (shape === 'station') doc.stations.s1 = { ...st, [field]: Number.NaN };
+    else if (shape === 'stop')
+      doc.stations.s1 = { ...st, stops: [{ ...st.stops[0], [field]: Number.NaN }] };
+    else doc.stations.s1 = { ...st, label: { ...st.label, [field]: Number.NaN } };
+  };
+
+  const shapes = ['station', 'stop', 'label'] as const;
+
+  for (const shape of shapes) {
+    for (const field of STATION_FINITE_FIELDS[shape]) {
+      it(`flags a non-finite ${shape} ${field}`, () => {
+        const doc = stationDoc();
+        nan(doc, shape, field);
+        expect(auditDoc(doc).join('\n')).toMatch(/station "s1": non-finite/);
+      });
+
+      // The reason the audit has to care: this is not a lost record, it is a
+      // lost MAP. Pin the consequence itself, so the pairing above can never
+      // be dismissed as belt-and-braces.
+      it(`…and the file it would write does not load: ${shape} ${field}`, () => {
+        const doc = stationDoc();
+        nan(doc, shape, field);
+        const round = parse(serialize(doc));
+        expect(round.ok).toBe(false);
+      });
+    }
+  }
+
+  it('a clean station audits clean', () => {
+    expect(auditDoc(stationDoc())).toEqual([]);
+  });
+});
+
+/**
+ * Region-assignment anchors. `sanitizeRegionAssignments` FILTERS an anchor
+ * whose `distance` is not a finite number ≥ 0 (or whose optional `side` is
+ * present and non-finite), and drops the whole assignment when that leaves it
+ * with none — so a NaN here is a region paint that silently disappears on the
+ * next load, exactly the standing the other non-finite substance has.
+ */
+describe('auditDoc: region anchor substance', () => {
+  const withAnchor = (anchor: Partial<RegionAnchor>): MapDoc => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('l1')] }),
+        makeStation({ id: 's2', x: 100, stops: [makeStop('l1')] }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['s1', 's2'] })],
+      styles: Object.values(T.DEFAULT_STYLES),
+    });
+    doc.regionAssignments = {
+      r1: {
+        id: 'r1',
+        lineId: 'l1',
+        lines: ['l1'],
+        anchors: [{ pairKey: 's1|s2', anchorEnd: 'from', distance: 5, lineId: 'l1', ...anchor }],
+      },
+    };
+    return doc;
+  };
+
+  it('a well-formed anchor is not a violation', () => {
+    expect(auditDoc(withAnchor({}))).toEqual([]);
+    expect(auditDoc(withAnchor({ side: -2 }))).toEqual([]);
+  });
+
+  it('flags a non-finite anchor distance', () => {
+    expect(auditDoc(withAnchor({ distance: Number.NaN })).join('\n')).toMatch(
+      /regionAssignment "r1": non-finite or negative anchor distance/,
+    );
+  });
+
+  // Distance is an arc LENGTH along the corridor, so a negative one is as
+  // unresolvable as a NaN — and the load path filters it on the same predicate.
+  it('flags a negative anchor distance', () => {
+    expect(auditDoc(withAnchor({ distance: -1 })).join('\n')).toMatch(
+      /regionAssignment "r1": non-finite or negative anchor distance/,
+    );
+  });
+
+  it('flags a non-finite anchor side', () => {
+    expect(auditDoc(withAnchor({ side: Number.NaN })).join('\n')).toMatch(
+      /regionAssignment "r1": non-finite anchor side/,
+    );
+  });
+
+  // The consequence, pinned: the load path really does take the paint away.
+  it('the file such a doc writes loses the assignment entirely', () => {
+    const round = parse(serialize(withAnchor({ distance: Number.NaN })));
+    expect(round.ok).toBe(true);
+    if (!round.ok) return;
+    expect(round.doc.regionAssignments).toEqual({});
   });
 });

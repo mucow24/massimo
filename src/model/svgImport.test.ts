@@ -1,13 +1,51 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  base64Bytes,
   bytesToDataUri,
+  DOC_HEADROOM_BYTES,
   isAllowedImageHref,
   isImageFileTooLarge,
+  LOCALSTORAGE_QUOTA_BYTES,
   MAX_IMAGE_IMPORT_BYTES,
   parseSvgIntrinsicSize,
   rasterFileToImage,
   svgTextToDataUri,
 } from './svgImport';
+
+/**
+ * The ceiling's whole justification, done as arithmetic instead of left in a
+ * comment.
+ *
+ * Every other test in this file sizes its fixture FROM
+ * `MAX_IMAGE_IMPORT_BYTES` — which is right for testing the GATE, and means
+ * none of them can tell one ceiling from another. So the number itself was
+ * unguarded: #555 shipped 5 MB, whose base64 form overruns the quota on its
+ * own, and the whole suite stayed green until it was walked back by hand.
+ */
+describe('the import ceiling fits the quota it exists to protect', () => {
+  it('base64-inflates by exactly four characters per three bytes', () => {
+    // The claim the two assertions below rest on. Padding rounds UP, so a
+    // partial group still costs a full four.
+    expect(base64Bytes(3)).toBe(4);
+    expect(base64Bytes(4)).toBe(8);
+    expect(base64Bytes(0)).toBe(0);
+  });
+
+  it('leaves the rest of the doc its headroom inside the quota', () => {
+    // The one that fails at 5 MB: 5 MB encodes to ~6.7MB, past the quota
+    // before a single station is written beside it.
+    expect(base64Bytes(MAX_IMAGE_IMPORT_BYTES)).toBeLessThanOrEqual(
+      LOCALSTORAGE_QUOTA_BYTES - DOC_HEADROOM_BYTES,
+    );
+  });
+
+  it('is not so cautious that a phone photo stops fitting', () => {
+    // The ceiling has a floor too: the import it was raised for is a typical
+    // camera JPEG, and quietly shrinking it back would read as a regression
+    // to the person who asked for the raise.
+    expect(MAX_IMAGE_IMPORT_BYTES).toBeGreaterThanOrEqual(3 * 1024 * 1024);
+  });
+});
 
 describe('parseSvgIntrinsicSize', () => {
   it('uses the viewBox when there is no explicit width/height', () => {
