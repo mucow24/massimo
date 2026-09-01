@@ -144,6 +144,7 @@ import type {
   TextLabelWeight,
   Transfer,
 } from './types';
+import { GUIDE_COLORS } from './types';
 import { KNOWN_LINE_STYLES } from './lineStyle';
 
 const KNOWN_ORIENTATIONS = new Set<StopOrientation>([
@@ -466,6 +467,15 @@ export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
     ) {
       changed = true;
       const { extent: _bad, ...rest } = g;
+      g = rest;
+    }
+    // The color heals rather than dropping the guide: unlike a bad
+    // orientation, a value outside the preset union has a safe landing — the
+    // blue default. A stored 'blue' is that default spelled out, the
+    // locked:false of this field, and collapses the same way.
+    if (g.color !== undefined && (g.color === 'blue' || !GUIDE_COLORS.includes(g.color))) {
+      changed = true;
+      const { color: _bad, ...rest } = g;
       g = rest;
     }
     if (g.locked === false) {

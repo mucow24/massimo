@@ -856,7 +856,7 @@ station that drifted off its circle reprojects.
 
 **`AlignmentGuide`** (`MapDoc.guides`) — the line circle's straight-line sibling: `id,
 orientation: 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up', offset`, `extent?`,
-`locked?`. The orientation names how the line reads left-to-right (`diagonal-down` is \,
+`locked?`, `color?`. The orientation names how the line reads left-to-right (`diagonal-down` is \,
 `diagonal-up` /); `offset` is the world Y (horizontal) or X (vertical) the line sits at, and the
 Y-INTERCEPT — the Y where it crosses x = 0, `y − x` for \ and `y + x` for / — for the 45°s, so
 every orientation is one plain scalar. A guide is INFINITE unless `extent` — `{ center,
@@ -878,7 +878,13 @@ and the locked deep-pick's point test honours the same span) in its own theme sl
 ring grey: `theme.alignGuide` (a day blue / night periwinkle) for the idle stroke, with the
 amber selected state and softened hover from `-Selected`/`-Hover` — a guide's job is to be
 SEEN, and every state is a plain restroke since an infinite line has no body to outline
-([GuideView.tsx](src/components/GuideView.tsx)). The ink is hybrid-sized — screen-constant
+([GuideView.tsx](src/components/GuideView.tsx)). `color?` repaints that idle stroke one of the
+preset colors (`GUIDE_COLORS`: blue/red/green/purple/black; absent = blue, a stored `'blue'`
+collapses on load like `locked: false`) via `theme.alignGuideTints` — a day/night pair per
+preset, blue being `alignGuide` itself and Black flipping to white on the night canvas like
+every black ink. The tint outranks the Developer pane's idle-color dial (an explicit choice
+about THIS guide beats a re-tuned default) but, like the dial, never the state restrokes; the
+casing is not the tint's to touch. The ink is hybrid-sized — screen-constant
 at/above 300% zoom, riding the canvas below it, floored at half a screen px, a third of the
 core and so the weight it holds from 100% out — over a casing under-stroke (the selection
 ring's two-tone lesson: a single tone vanishes against the wrong body). That casing has a theme
@@ -960,23 +966,28 @@ The arrow keys mirror the split: offset arrows nudge every guide, and the cross-
 dead on an infinite guide — slides a bounded span along its street; a group tow
 (`translateSiblings`) slides `extent.center` by the along projection too, so the segment
 travels rigidly with its group. Both gestures draw the **spacing readout** while their offset
-phase runs: labeled segments from the cursor's foot on the guide out to the nearest PARALLEL
-guide either side (`guideNeighbourReadout`, `SnapGuide`s flagged `quiet` — the ambient register,
-see Snapping). It is a measurement, not a snap: an offset never
+phase runs: labeled segments from the cursor's foot on the guide out to the nearest parallel
+guide OF THE SAME COLOR either side (`guideNeighbourReadout`, `SnapGuide`s flagged `quiet` —
+the ambient register, see Snapping). It is a measurement, not a snap: an offset never
 snaps to a parallel guide, so it needs no engagement, rides every frame of the phase, and
 survives Shift (which declines snapping, not measuring). Only a same-orientation guide can be a
 neighbour — anything else crosses, and a BOUNDED parallel counts only where its span covers the
 cursor's along-position (`guideAdmitsFoot`): past its tip there is no ink to measure to, and a
 labeled segment must never end in blank canvas. The number is the TRUE perpendicular distance
-(`guidePerpDist`), so it equals the length of the segment drawn. The pool is therefore every
-PARALLEL guide, including one towed by this very drag (whose live offset the hook re-derives
-from its constant gap to the master; towed entries carry no extent — never drawing through a
-sibling dominates): a guide the readout cannot see is one the span reaches past and is drawn
-through, which is the one thing this chrome must never do. A coincident guide silences it
+(`guidePerpDist`), so it equals the length of the segment drawn. The pool is every parallel
+guide of the dragged guide's COLOR FAMILY (`familyGuideTargets` in the hook — `color` partitions
+the parallels into spacing systems, so dragging a red guide names the red-to-red gap and the
+span is drawn straight through a blue one sitting between, deliberately; a well pull measures
+the blue family, the default it mints), including a family member towed by this very drag
+(whose live offset the hook re-derives from its constant gap to the master; towed entries carry
+no extent — never drawing through a family sibling dominates): a family guide the readout
+cannot see is one the span reaches past and is drawn through. A coincident guide silences it
 instead — zero away on both sides is no gap to report.
 **Snap to grid length** rides that one DOF as well (`guideTensOffset`): the offset notches to a
-whole multiple of the active grid size measured from the NEAREST parallel guide — a terminal
-station's cadence, which likewise steps off its single neighbour. Anchors come from the SNAP
+whole multiple of the active grid size measured from the NEAREST same-color parallel guide (the
+readout's family scope — the cadence steps off the guide the readout names, so the two must
+agree on who counts) — a terminal station's cadence, which likewise steps off its single
+neighbour. Anchors come from the SNAP
 pool, not the readout's wider one: a guide towed by this drag holds a constant gap and can
 anchor nothing — and a bounded parallel anchors only where its span covers the cursor's
 along-position, the readout's own rule (a cadence off invisible ink is a snap the user cannot
@@ -995,11 +1006,14 @@ guide gesture hovers them — the well under the CURSOR, since a strip guide's d
 its whole edge band, corner squares included. Its popover is the one coordinate (Y, X, or Y₀
 for a diagonal) + a Length row — 2 × the half-length, an empty box under an ∞ placeholder while
 infinite (typing there commits on blur, centered on the viewport center's foot), with the ∞
-button as the way back — + lock/delete, lock protecting extent too
+button as the way back — + the Color preset dropdown (swatches painted from `alignGuideTints`,
+`setGuideColor` collapsing blue to absence) + lock/delete, lock protecting extent and color too
 ([GuidePopover.tsx](src/components/GuidePopover.tsx)). `sanitizeGuides` (serialize.ts, on BOTH
 load paths) drops malformed entries, strips a malformed extent (a non-object, non-finite
 scalars, or a zero-or-negative span — an invisible, unhittable guide) back to the infinite
-form, and collapses a stored `locked: false`; there are no cross-references to repair, but the
+form, strips a `color` outside the preset union (a bad color has a safe landing — the blue
+default — so it heals rather than dropping the guide), and collapses a stored `locked: false`
+or `color: 'blue'`; there are no cross-references to repair, but the
 two required fields are a stored union and a stored number, and the `guide*` helpers switch over
 the four orientations with no default arm — a non-member reaches the snapper as an `undefined`
 axis and throws out of the drag, while `guideSegmentInBox` hands the renderer nothing to draw.

@@ -5,6 +5,7 @@ import {
   deleteGuide,
   moveGuide,
   resizeGuide,
+  setGuideColor,
   setGuideLocked,
   setItemsLocked,
 } from './transforms';
@@ -36,6 +37,20 @@ describe('alignment guide transforms', () => {
     expect('locked' in unlocked.guides.g1).toBe(false);
     // Already at the requested state → untouched doc.
     expect(setGuideLocked(unlocked, 'g1', false)).toBe(unlocked);
+  });
+
+  it('setGuideColor stores a preset and collapses blue to the omitted field', () => {
+    const doc = addGuide(makeDoc({}), 'g1', 'horizontal', 0);
+    const red = setGuideColor(doc, 'g1', 'red');
+    expect(red.guides.g1.color).toBe('red');
+    // Already at the requested color → untouched doc; unknown id likewise.
+    expect(setGuideColor(red, 'g1', 'red')).toBe(red);
+    expect(setGuideColor(red, 'nope', 'green')).toBe(red);
+    // Blue is the default and is spelled as ABSENCE, the optional-field
+    // convention lock already follows.
+    const blue = setGuideColor(red, 'g1', 'blue');
+    expect('color' in blue.guides.g1).toBe(false);
+    expect(setGuideColor(blue, 'g1', 'blue')).toBe(blue);
   });
 
   it('setItemsLocked reaches guides alongside the other kinds', () => {

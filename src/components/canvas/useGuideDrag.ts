@@ -20,7 +20,7 @@ import {
   type SnapGuide,
 } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
-import type { GuideOrientation } from '../../model/types';
+import type { GuideColor, GuideOrientation } from '../../model/types';
 import { useDragSnap } from './useDragSnap';
 import { liveAlignTargets, liveGuideTargets } from './snapTargets';
 import { finishDrag, pointerLost, releaseDragCapture, trackDragMove } from './dragGesture';
@@ -60,6 +60,19 @@ export interface GuideDragApi {
 
 type ScreenToWorld = (mx: number, my: number) => Vec2;
 
+// The color-family scope on a gesture's parallel pool: parallels of another
+// color leave it entirely — neither measured to by the readout nor stepped
+// from by the grid-length cadence (the two must agree on who counts). Crossing
+// guides pass untouched: they are position targets for a tip, not spacing.
+// Absent means the blue default on both sides — the doc never stores 'blue',
+// but the pool should not depend on that invariant to compare correctly.
+const familyGuideTargets = (
+  targets: readonly GuideTarget[],
+  orientation: GuideOrientation,
+  color: GuideColor | undefined,
+): GuideTarget[] =>
+  targets.filter((t) => t.orientation !== orientation || (t.color ?? 'blue') === (color ?? 'blue'));
+
 /**
  * Guide gestures, all three of them:
  *
@@ -98,6 +111,11 @@ type ScreenToWorld = (mx: number, my: number) => Vec2;
  * the nearest STATIONARY one also anchors the offset's cadence — a whole grid
  * length measured off a guide, which is a gap, never a stack (`guideTensOffset`
  * declines the zero-step notch that would land the two on top of each other).
+ * That parallel pool is scoped to the dragged guide's COLOR FAMILY
+ * (`familyGuideTargets`): color partitions the parallel guides into spacing
+ * systems, so the readout names the red-to-red gap straight through a blue
+ * guide sitting between, and the cadence steps off the same guide the readout
+ * names. Crossing guides stay color-blind — they pin position, not spacing.
  *
  * Both gestures also carry a RESIZE phase, live on Ctrl/Cmd like the station
  * drag's redistribute (re-read every move): while held, the offset freezes
@@ -157,12 +175,15 @@ export function useGuideDrag(
     // against, what the grid-length cadence steps FROM (never ONTO — see
     // guideTensOffset), and what the resize phase's endpoint snaps onto (the
     // crossing ones; a parallel is never a target). Snapshotted at
-    // pointer-down like every other pool.
+    // pointer-down like every other pool, parallels already scoped to the
+    // dragged guide's color family (familyGuideTargets).
     neighbours: readonly GuideTarget[];
-    // The towed parallel siblings, as their constant gap to the master. They
-    // are out of every SNAP pool (a target moving with the grab is an unstable
-    // one) but they are still ink on the canvas, so the readout has to see them
-    // or it draws a span through one — hence a gap rather than an exclusion.
+    // The towed SAME-COLOR parallel siblings, as their constant gap to the
+    // master. They are out of every SNAP pool (a target moving with the grab
+    // is an unstable one) but they are still ink on the canvas, so the readout
+    // has to see them or it draws a span through one — hence a gap rather than
+    // an exclusion. A towed parallel of another color is simply out, like its
+    // stationary kin: family membership beats the never-draw-through rule.
     // Constant for the whole gesture: a parallel sibling takes the master's
     // offset delta verbatim (`guideNudgeDelta ∘ guideMoveVector` is the
     // identity on its own orientation), so the live offset is master + gap.
@@ -537,6 +558,7 @@ export function useGuideDrag(
     // knob's rule, spelled the same way.
     const siblings = handle ? emptyGroupSiblings() : collectGroupSiblings('guide', id);
     const exclude = groupAlignExclude('guide', id, siblings);
+    const guides = useDoc.getState().guides;
     dragRef.current = {
       id,
       orientation: guide.orientation,
@@ -546,9 +568,13 @@ export function useGuideDrag(
       moved: false,
       siblings,
       allTargets: liveAlignTargets(exclude),
-      neighbours: liveGuideTargets(exclude),
+      neighbours: familyGuideTargets(liveGuideTargets(exclude), guide.orientation, guide.color),
       towedGaps: siblings.guides
-        .filter((g) => g.orientation === guide.orientation)
+        .filter(
+          (g) =>
+            g.orientation === guide.orientation &&
+            (guides[g.id]?.color ?? 'blue') === (guide.color ?? 'blue'),
+        )
         .map((g) => g.startOffset - guide.offset),
       lastOffset: guide.offset,
       offsetBias: 0,
@@ -577,9 +603,10 @@ export function useGuideDrag(
       startMY: e.clientY,
       moved: false,
       // No exclusions: the ghost isn't in the doc yet (placement's rule), and
-      // a pull tows nothing.
+      // a pull tows nothing. It mints a default-blue guide, so its parallel
+      // pool is the blue family.
       allTargets: liveAlignTargets(),
-      neighbours: liveGuideTargets(),
+      neighbours: familyGuideTargets(liveGuideTargets(), orientation, undefined),
       towedGaps: [],
       extent: null,
       resize: null,

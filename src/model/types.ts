@@ -819,6 +819,13 @@ export interface LineCircle {
 // another well.
 export type GuideOrientation = 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up';
 
+// The preset colors a guide can be painted, in the popover dropdown's order.
+// 'blue' is the default and is stored as ABSENCE (see AlignmentGuide.color);
+// the list is the sanitizer's membership test and the dropdown's rows, so a
+// new preset is one entry here plus a day/night pair in theme.alignGuideTints.
+export const GUIDE_COLORS = ['blue', 'red', 'green', 'purple', 'black'] as const;
+export type GuideColor = (typeof GUIDE_COLORS)[number];
+
 // An alignment guide: a horizontal, vertical, or 45° line pulled out of the
 // canvas-edge wells — the only way one is born. Editor scaffolding in
 // the line-circle mold — a dashed guide rendered below map ink and excluded
@@ -832,6 +839,12 @@ export interface AlignmentGuide {
   id: string;
   orientation: GuideOrientation;
   offset: number;
+  // The preset ink the idle stroke wears — and the guide's spacing FAMILY:
+  // the drag's neighbour readout and its grid-length cadence measure only
+  // against parallel guides of the same color. Absent ⇒ 'blue', the default
+  // (a stored 'blue' collapses on load, the locked:false convention); the
+  // actual paint per preset is the theme's `alignGuideTints`.
+  color?: GuideColor;
   // The bounded span, in the guide's along-axis parameter t = p · guideAxis
   // (world units of true length: x for horizontal, y for vertical, (x ± y)/√2
   // for the diagonals). The guide renders only this span and attracts snaps

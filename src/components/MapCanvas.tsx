@@ -1576,6 +1576,7 @@ export function MapCanvas() {
                   vbW={overdrawn.vbW}
                   vbH={overdrawn.vbH}
                   guideColor={theme.alignGuide}
+                  tintColor={guides[gid].color && theme.alignGuideTints[guides[gid].color]}
                   casingColor={theme.alignGuideCasing}
                   selectedColor={theme.alignGuideSelected}
                   hoverColor={theme.alignGuideHover}

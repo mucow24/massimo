@@ -64,10 +64,40 @@ describe('alignment guides on the load path', () => {
   it('sanitizeGuides is an identity (same reference) on a well-formed record', () => {
     const guides = {
       g1: { id: 'g1', orientation: 'horizontal' as const, offset: 10, locked: true },
+      g2: { id: 'g2', orientation: 'vertical' as const, offset: 4, color: 'red' as const },
     };
     const out = sanitizeGuides(guides);
     expect(out.changed).toBe(false);
     expect(out.guides).toBe(guides);
+  });
+
+  it('round-trips a guide color', () => {
+    const doc = makeDoc({
+      guides: [
+        makeGuide({ id: 'g1', orientation: 'horizontal', offset: 120, color: 'purple' }),
+        makeGuide({ id: 'g2', orientation: 'vertical', offset: -35.5 }),
+      ],
+    });
+    expect(roundTrip(doc).guides).toEqual(doc.guides);
+  });
+
+  it('sanitizeGuides strips an unknown color and collapses a stored blue', () => {
+    // Blue is the default, spelled as absence — a stored 'blue' is the
+    // locked:false of this field. A value outside the preset union heals by
+    // stripping the field (back to blue), not by dropping the guide: unlike a
+    // bad orientation, a bad color has a safe landing.
+    const { guides, changed } = sanitizeGuides({
+      rogue: {
+        id: 'rogue',
+        orientation: 'horizontal',
+        offset: 10,
+        color: 'chartreuse' as unknown as AlignmentGuide['color'],
+      },
+      storedBlue: { id: 'storedBlue', orientation: 'vertical', offset: 5, color: 'blue' },
+    });
+    expect(changed).toBe(true);
+    expect('color' in guides.rogue).toBe(false);
+    expect('color' in guides.storedBlue).toBe(false);
   });
 
   it('round-trips a bounded extent', () => {

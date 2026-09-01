@@ -522,6 +522,25 @@ describe('<GuideView /> developer dials', () => {
     });
     expect(container.querySelector('[data-guide-ink]')!.getAttribute('stroke')).toBe('#a80');
   });
+
+  it('a per-guide tint repaints the idle core and outranks the color dial', () => {
+    // The dial re-tunes the DEFAULT idle ink; a guide the user painted a
+    // preset keeps that choice. The casing is not the tint's to touch.
+    setGuide({ color: '#ff00ff' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1, -500, -500, {
+      tintColor: '#d92b2b',
+    });
+    expect(container.querySelector('[data-guide-ink]')!.getAttribute('stroke')).toBe('#d92b2b');
+    expect(container.querySelector('[data-guide-casing]')!.getAttribute('stroke')).toBe('#fff');
+  });
+
+  it('a tint leaves the state restrokes alone too — the color IS the state', () => {
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1, -500, -500, {
+      tintColor: '#d92b2b',
+      selected: true,
+    });
+    expect(container.querySelector('[data-guide-ink]')!.getAttribute('stroke')).toBe('#a80');
+  });
 });
 
 describe('<GuideView /> in-flight zoom', () => {

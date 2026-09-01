@@ -1,11 +1,16 @@
 import { useState } from 'react';
+import { ChevronDownIcon } from '@radix-ui/react-icons';
+import * as Select from '@radix-ui/react-select';
 import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
+import { useThemeColors } from '../state/theme';
 import { PopoverShell } from './PopoverShell';
 import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { useNumericField } from './useNumericField';
 import { PopoverFooter } from './PopoverFooter';
+import { FieldSelectContent } from './FieldSelectContent';
 import { guideAlongOf, guideFoot, roundMeasurement } from '../geometry/snap';
+import { GUIDE_COLORS, type GuideColor } from '../model/types';
 import type { AlignmentGuide, GuideOrientation } from '../model/types';
 
 // Half a world unit per wheel tick, arrow press and spinner click — the
@@ -21,6 +26,16 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // Length, floored at 0, agrees with its wheel; the offset row is signed and
 // unbounded, and its arrows step half a unit from wherever the box sits.
 const STEP = 0.5;
+
+// The dropdown's display names — the stored values capitalized, spelled out so
+// the rows and the union can't drift silently on a rename.
+const COLOR_LABEL: Record<GuideColor, string> = {
+  blue: 'Blue',
+  red: 'Red',
+  green: 'Green',
+  purple: 'Purple',
+  black: 'Black',
+};
 
 // The one coordinate's title + field naming, per orientation. A diagonal's
 // scalar is its Y-intercept — labeled Y₀, spelled out in the hover title.
@@ -52,7 +67,9 @@ interface Props {
  * guide, X for a vertical — a signed, unbounded world position, so a plain
  * numeric field rather than a slider row) and its Length — 2 × the extent's
  * half-length, reading "∞" (an empty box under that placeholder) while the
- * guide is infinite — plus the standard lock/delete footer. Everything else
+ * guide is infinite — plus the color-preset dropdown (paint AND spacing
+ * family; see AlignmentGuide.color) and the standard lock/delete footer.
+ * Everything else
  * about a guide is direct manipulation on the canvas (drag to move, Ctrl-drag
  * to bound, drag back into its well to delete, arrow keys nudge).
  */
@@ -61,7 +78,11 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
   const moveGuide = useDoc((s) => s.moveGuide);
   const resizeGuide = useDoc((s) => s.resizeGuide);
   const setGuideLocked = useDoc((s) => s.setGuideLocked);
+  const setGuideColor = useDoc((s) => s.setGuideColor);
   const deleteGuide = useDoc((s) => s.deleteGuide);
+  // For the dropdown's swatches — the same table the canvas paints from, so
+  // the preview and the ink can't disagree (day/night included).
+  const tints = useThemeColors().alignGuideTints;
 
   const coord = COORD[guide.orientation];
   const locked = guide.locked ?? false;
@@ -171,6 +192,34 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
           onBlur={extent ? lengthField.onNumberBlur : (e) => bindFromViewport(e.target.value)}
           onKeyDown={extent ? undefined : (e) => e.key === 'Enter' && e.currentTarget.blur()}
         />
+      </div>
+      {/* The preset paint — and the guide's spacing family: the drag readout
+          measures only between same-color parallels. Absent stores as blue,
+          so the select speaks the default rather than an empty box. */}
+      <div className="row">
+        <label>Color</label>
+        <Select.Root
+          value={guide.color ?? 'blue'}
+          disabled={locked}
+          onValueChange={(v) => setGuideColor(guide.id, v as GuideColor)}
+        >
+          <Select.Trigger className="field-select" aria-label="Color">
+            <Select.Value />
+            <Select.Icon className="field-select-caret" aria-hidden="true">
+              <ChevronDownIcon />
+            </Select.Icon>
+          </Select.Trigger>
+          <FieldSelectContent>
+            {GUIDE_COLORS.map((c) => (
+              <Select.Item key={c} value={c} className="field-select-item">
+                <Select.ItemText>
+                  <span className="line-swatch" style={{ background: tints[c] }} aria-hidden />
+                  {COLOR_LABEL[c]}
+                </Select.ItemText>
+              </Select.Item>
+            ))}
+          </FieldSelectContent>
+        </Select.Root>
       </div>
       <PopoverFooter
         noun="guide"

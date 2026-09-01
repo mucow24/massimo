@@ -6,6 +6,7 @@ import type {
   AutoHAlign,
   AutoVAlign,
   DayNightColor,
+  GuideColor,
   GuideOrientation,
   LabelAlign,
   LabelValign,
@@ -1133,6 +1134,7 @@ interface DocState extends MapDoc {
   moveGuide: (id: string, offset: number, center?: number) => void;
   resizeGuide: (id: string, extent: { center: number; halfLength: number } | null) => void;
   setGuideLocked: (id: string, locked: boolean) => void;
+  setGuideColor: (id: string, color: GuideColor) => void;
   deleteGuide: (id: string) => void;
   bindStationToCircle: (
     stationId: StationId,
@@ -1631,6 +1633,7 @@ export const useDoc = create<DocState>()(
         moveGuide: (id, offset, center) => set((s) => T.moveGuide(s, id, offset, center)),
         resizeGuide: (id, extent) => set((s) => T.resizeGuide(s, id, extent)),
         setGuideLocked: (id, locked) => set((s) => T.setGuideLocked(s, id, locked)),
+        setGuideColor: (id, color) => set((s) => T.setGuideColor(s, id, color)),
         deleteGuide: (id) => set((s) => T.deleteGuide(s, id)),
         bindStationToCircle: (stationId, circleId, seatFrom) =>
           set(withRegionReconcile((s) => T.bindStationToCircle(s, stationId, circleId, seatFrom))),
