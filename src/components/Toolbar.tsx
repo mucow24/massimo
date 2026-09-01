@@ -11,9 +11,9 @@ import type { MapDoc } from '../model/types';
 import {
   useViewportStore,
   nextGridSize,
-  DAY_CANVAS_COLORS,
+  CANVAS_COLORS,
   INTERFACE_THEMES,
-  type DayCanvasColor,
+  type CanvasColor,
   type InterfaceTheme,
 } from '../state/viewportStore';
 import { exportVisibilityOverrides } from '../state/visibility';
@@ -133,20 +133,21 @@ function ToolButtons() {
   );
 }
 
-// Menu wording for the day-paper ladder. A `Record` so a paper added to
-// DAY_CANVAS_COLORS fails to compile until it is named here, and the submenu
-// below reads its rows straight off the ladder rather than re-spelling them.
-const DAY_CANVAS_COLOR_LABELS: Record<DayCanvasColor, string> = {
-  white: 'White',
+// Menu wording for the paper ladder. A `Record` so a paper added to
+// CANVAS_COLORS fails to compile until it is named here, and the submenu below
+// reads its rows straight off the ladder rather than re-spelling them.
+const CANVAS_COLOR_LABELS: Record<CanvasColor, string> = {
+  auto: 'Auto (follows map mode)',
+  light: 'Light',
   gray: 'Gray',
-  black: 'Black',
+  dark: 'Dark',
 };
 
 // Same deal for the chrome-theme ladder (INTERFACE_THEMES).
 const INTERFACE_THEME_LABELS: Record<InterfaceTheme, string> = {
   auto: 'Auto (follows map)',
-  light: 'Always light',
-  dark: 'Always dark',
+  light: 'Light',
+  dark: 'Dark',
 };
 
 export function Toolbar() {
@@ -158,7 +159,8 @@ export function Toolbar() {
   const setGridSize = useViewportStore((s) => s.setGridSize);
   const darkMode = useDoc((s) => s.darkMode);
   const setDarkMode = useDoc((s) => s.setDarkMode);
-  const setDayCanvasColor = useViewportStore((s) => s.setDayCanvasColor);
+  const canvasColor = useViewportStore((s) => s.canvasColor);
+  const setCanvasColor = useViewportStore((s) => s.setCanvasColor);
   const interfaceTheme = useViewportStore((s) => s.interfaceTheme);
   const setInterfaceTheme = useViewportStore((s) => s.setInterfaceTheme);
   const clearAll = useDoc((s) => s.clearAll);
@@ -752,14 +754,17 @@ export function Toolbar() {
             ))}
           </MenuRadioGroup>
         </SubMenu>
-        {/* Local viewing preference: dim the day-mode paper to cut glare
-            without switching to night mode. Persisted, never touches the doc. */}
-        <SubMenu label="Day canvas color">
-          {DAY_CANVAS_COLORS.map((color) => (
-            <MenuItem key={color} onClick={() => setDayCanvasColor(color)}>
-              {DAY_CANVAS_COLOR_LABELS[color]}
-            </MenuItem>
-          ))}
+        {/* Local viewing preference: pin the paper (e.g. dim a day map to cut
+            glare) without switching the map's mode. Persisted, never touches
+            the doc. */}
+        <SubMenu label="Canvas color">
+          <MenuRadioGroup value={canvasColor} onValueChange={setCanvasColor}>
+            {CANVAS_COLORS.map((color) => (
+              <MenuRadioItem key={color} value={color}>
+                {CANVAS_COLOR_LABELS[color]}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
         </SubMenu>
         <MenuItem onClick={onClear}>Clear</MenuItem>
       </Menu>

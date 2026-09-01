@@ -477,7 +477,7 @@ select option {
   background: var(--border-soft);
   margin: 4px 6px;
 }
-/* Pick-one row (e.g. Map → Interface theme → Always dark): a leading check
+/* Pick-one row (e.g. Map → Interface theme → Dark): a leading check
    gutter that fills in on the chosen row. The fixed gutter width reserves space
    in both states so every row's label sits at the same x. */
 .menu-panel .menu-item.menu-radio-item {
@@ -1051,8 +1051,7 @@ select option {
   grid-area: canvas;
   position: relative;
   /* background is set inline from theme.canvasBg (see MapCanvas): it tracks the
-     MAP palette, not the chrome's data-theme, so an "Always dark" chrome
-     leaves it. */
+     MAP palette, not the chrome's data-theme, so a "Dark" chrome leaves it. */
   overflow: hidden;
   /* Contain the canvas as one stacking layer. Without this, `position:relative`
      alone is NOT a stacking context, so the item popovers' zIndex:1100 (see
@@ -1078,8 +1077,8 @@ select option {
   justify-content: center;
   /* The three colors are restated as a day/night pair of their own rather than
      read off --text-muted / --accent / --danger. Those answer to the chrome's
-     data-theme, and the strips sit on the CANVAS: an "Always dark" chrome would
-     flip them to night ink over a light map, and a dimmed day paper would strand
+     data-theme, and the strips sit on the CANVAS: a "Dark" chrome would flip
+     them to night ink over a light map, and a dimmed day paper would strand
      them in day ink over a dark one. The host's `data-paper` is the map
      palette's own darkPaper (MapCanvas + theme.ts) — the values below are the
      two themes' tokens, pinned to the paper instead of to the toolbar. */

@@ -76,7 +76,7 @@ import { saveVersion, newMapId, getPayload, listMaps, listVersions } from '../st
 import type { MapSummary, VersionMeta } from '../state/mapLibrary';
 import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc, useSelection } from '../state/store';
-import { useViewportStore, DAY_CANVAS_COLORS, INTERFACE_THEMES } from '../state/viewportStore';
+import { useViewportStore, CANVAS_COLORS, INTERFACE_THEMES } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { pickDocSnapshot } from '../state/store';
 import { serialize } from '../model/serialize';
@@ -1852,27 +1852,36 @@ describe('Toolbar — transfer anchors toggle', () => {
   });
 });
 
-describe('Toolbar — day canvas color', () => {
+describe('Toolbar — canvas color', () => {
   const openPapers = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByRole('button', { name: 'Map' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Day canvas color' }));
-    return screen.findByRole('menuitem', { name: 'White' });
+    await user.click(screen.getByRole('menuitem', { name: 'Canvas color' }));
+    return screen.findByRole('menuitemradio', { name: 'Gray' });
   };
 
-  // The submenu is built from DAY_CANVAS_COLORS, not from three hand-written
-  // rows: a paper the ladder offers but the menu forgets is a paper the user
-  // can never reach, and one the menu offers but the ladder has dropped writes
-  // a value nothing downstream accepts.
-  it('offers one row per rung of the ladder, in ladder order', async () => {
+  // The submenu is built from CANVAS_COLORS, not from hand-written rows: a
+  // paper the ladder offers but the menu forgets is a paper the user can never
+  // reach, and one the menu offers but the ladder has dropped writes a value
+  // nothing downstream accepts. Radio rows, so the current paper shows a check.
+  it('offers one checked-or-not row per rung of the ladder, in ladder order', async () => {
     const user = userEvent.setup();
+    useViewportStore.setState({ canvasColor: 'gray' });
     renderToolbar();
     await openPapers(user);
-    const rows = screen
-      .getAllByRole('menuitem')
-      .map((el) => el.textContent ?? '')
-      .filter((t) => ['White', 'Gray', 'Black'].includes(t));
-    expect(rows).toEqual(['White', 'Gray', 'Black']);
-    expect(rows).toHaveLength(DAY_CANVAS_COLORS.length);
+    const rows = screen.getAllByRole('menuitemradio');
+    expect(rows.map((r) => r.textContent)).toEqual([
+      'Auto (follows map mode)',
+      'Light',
+      'Gray',
+      'Dark',
+    ]);
+    expect(rows).toHaveLength(CANVAS_COLORS.length);
+    expect(rows.map((r) => r.getAttribute('aria-checked'))).toEqual([
+      'false',
+      'false',
+      'true',
+      'false',
+    ]);
   });
 
   it('writes the picked paper to the store', async () => {
@@ -1881,8 +1890,8 @@ describe('Toolbar — day canvas color', () => {
     await openPapers(user);
     // fireEvent, like the Export rows above: Radix's own pointer handling on a
     // sub-panel item doesn't complete under user-event in jsdom.
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Gray' }));
-    expect(useViewportStore.getState().dayCanvasColor).toBe('gray');
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Gray' }));
+    expect(useViewportStore.getState().canvasColor).toBe('gray');
   });
 });
 
@@ -1890,7 +1899,7 @@ describe('Toolbar — interface theme', () => {
   const openThemes = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Interface theme' }));
-    return screen.findByRole('menuitemradio', { name: 'Always dark' });
+    return screen.findByRole('menuitemradio', { name: 'Dark' });
   };
 
   // Built from INTERFACE_THEMES, like the paper submenu: one radio row per rung,
@@ -1901,11 +1910,7 @@ describe('Toolbar — interface theme', () => {
     renderToolbar();
     await openThemes(user);
     const rows = screen.getAllByRole('menuitemradio');
-    expect(rows.map((r) => r.textContent)).toEqual([
-      'Auto (follows map)',
-      'Always light',
-      'Always dark',
-    ]);
+    expect(rows.map((r) => r.textContent)).toEqual(['Auto (follows map)', 'Light', 'Dark']);
     expect(rows).toHaveLength(INTERFACE_THEMES.length);
     expect(rows.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
   });
@@ -1914,7 +1919,7 @@ describe('Toolbar — interface theme', () => {
     const user = userEvent.setup();
     renderToolbar();
     await openThemes(user);
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Always dark' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Dark' }));
     expect(useViewportStore.getState().interfaceTheme).toBe('dark');
   });
 });

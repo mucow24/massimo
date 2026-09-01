@@ -103,16 +103,16 @@ test.describe('dark mode', () => {
 // The interface theme is the OTHER dark: a local viewing preference
 // (viewportStore, persisted, never on the doc) that themes only the chrome,
 // leaving the map's canvas exactly as the doc defines it. It's orthogonal to the
-// doc's night mode (the moon toggle) — "Always dark" is a dark UI over a
-// still-light map, "Always light" a light UI over a night map.
+// doc's night mode (the moon toggle) — "Dark" is a dark UI over a still-light
+// map, "Light" a light UI over a night map.
 test.describe('interface theme', () => {
   const pickTheme = async (page: Page, label: string) => {
     await openMapMenu(page);
     await page.getByRole('menuitem', { name: 'Interface theme' }).click();
-    await page.getByRole('menuitemradio', { name: label }).click();
+    await page.getByRole('menuitemradio', { name: label, exact: true }).click();
   };
 
-  test('Always dark darkens the chrome only, leaving a light map light on the canvas', async ({
+  test('Dark darkens the chrome only, leaving a light map light on the canvas', async ({
     page,
   }) => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
@@ -126,7 +126,7 @@ test.describe('interface theme', () => {
     await expect(app).not.toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#fafafa');
 
-    await pickTheme(page, 'Always dark');
+    await pickTheme(page, 'Dark');
 
     // Chrome flipped dark…
     await expect(app).toHaveAttribute('data-theme', 'dark');
@@ -143,7 +143,7 @@ test.describe('interface theme', () => {
     const app = page.locator('.app');
     const bg = page.locator('[data-bg]');
 
-    await pickTheme(page, 'Always dark');
+    await pickTheme(page, 'Dark');
     await expect(app).toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#fafafa');
 
@@ -152,8 +152,8 @@ test.describe('interface theme', () => {
     await expect(app).toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#000000');
 
-    // Always light over that night map: chrome relights, canvas stays black.
-    await pickTheme(page, 'Always light');
+    // Light over that night map: chrome relights, canvas stays black.
+    await pickTheme(page, 'Light');
     await expect(app).not.toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#000000');
 
@@ -168,7 +168,7 @@ test.describe('interface theme', () => {
   test('persists across a reload', async ({ page }) => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
 
-    await pickTheme(page, 'Always dark');
+    await pickTheme(page, 'Dark');
     await expect(page.locator('.app')).toHaveAttribute('data-theme', 'dark');
 
     await page.reload();
@@ -176,5 +176,42 @@ test.describe('interface theme', () => {
     // Chrome still dark, canvas still light — the preference rode localStorage.
     await expect(page.locator('.app')).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('[data-bg]')).toHaveAttribute('fill', '#fafafa');
+  });
+});
+
+// The canvas color is the paper's own pin: it moves the paper under whichever
+// mode the map is in, while the mode's ink stays put and the chrome is untouched.
+test.describe('canvas color', () => {
+  const pickPaper = async (page: Page, label: string) => {
+    await openMapMenu(page);
+    await page.getByRole('menuitem', { name: 'Canvas color' }).click();
+    await page.getByRole('menuitemradio', { name: label, exact: true }).click();
+  };
+
+  test('pins the paper under either map mode, leaving ink and chrome to the mode', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBulletsAndLabel);
+
+    const app = page.locator('.app');
+    const bg = page.locator('[data-bg]');
+    const labelText = page.locator('[data-text-label-id="g1"] text').first();
+
+    // Dark paper under a day map: black canvas, day ink, light chrome.
+    await pickPaper(page, 'Dark');
+    await expect(bg).toHaveAttribute('fill', '#000000');
+    await expect(labelText).toHaveAttribute('fill', '#111111');
+    await expect(app).not.toHaveAttribute('data-theme', 'dark');
+
+    // Light paper under a night map: near-white canvas, night ink, dark chrome.
+    await page.getByRole('button', { name: 'Toggle dark mode' }).click();
+    await pickPaper(page, 'Light');
+    await expect(bg).toHaveAttribute('fill', '#fafafa');
+    await expect(labelText).toHaveAttribute('fill', '#ffffff');
+    await expect(app).toHaveAttribute('data-theme', 'dark');
+
+    // Auto: the paper goes back to following the mode.
+    await pickPaper(page, 'Auto (follows map mode)');
+    await expect(bg).toHaveAttribute('fill', '#000000');
   });
 });

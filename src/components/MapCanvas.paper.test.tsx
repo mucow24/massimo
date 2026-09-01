@@ -12,14 +12,14 @@ stubCanvasHostSize();
  * `data-paper` on the canvas host answers one question for the chrome that sits
  * ON the canvas as HTML — today the guide wells, whose ink flips off it in
  * styles.css. It tracks the PAPER, never the chrome's `data-theme`, because the
- * two disagree in both directions: an "Always dark" chrome darkens the toolbar
- * over a still-light map, and the gray/black day papers darken the map under a
- * still-light toolbar.
+ * two disagree in both directions: a "Dark" chrome darkens the toolbar over a
+ * still-light map, and a gray or dark paper darkens the map under a still-light
+ * toolbar.
  */
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, darkMode: false });
   useSelection.setState({ ...useSelection.getState(), uiMode: { kind: 'idle' } });
-  useViewportStore.setState({ interfaceTheme: 'auto', dayCanvasColor: 'white', showGuides: true });
+  useViewportStore.setState({ interfaceTheme: 'auto', canvasColor: 'auto', showGuides: true });
 });
 
 const paper = () => document.querySelector('.canvas-host')!.getAttribute('data-paper');
@@ -30,7 +30,7 @@ describe('canvas paper marker', () => {
     expect(paper()).toBeNull();
   });
 
-  it('ignores the chrome theme — an "Always dark" chrome leaves the paper light', () => {
+  it('ignores the chrome theme — a "Dark" chrome leaves the paper light', () => {
     useViewportStore.setState({ interfaceTheme: 'dark' });
     render(<App />);
     // The chrome went dark…
@@ -45,11 +45,19 @@ describe('canvas paper marker', () => {
     expect(paper()).toBe('dark');
   });
 
-  it('goes dark on a dimmed day paper, with the chrome still light', () => {
-    useViewportStore.setState({ dayCanvasColor: 'black' });
+  it('goes dark on a dark paper pinned under a day map, with the chrome still light', () => {
+    useViewportStore.setState({ canvasColor: 'dark' });
     render(<App />);
     expect(document.querySelector('.app')!.getAttribute('data-theme')).toBeNull();
     expect(paper()).toBe('dark');
+  });
+
+  it('clears on a light paper pinned under a night map, with the chrome still dark', () => {
+    useDoc.setState({ ...useDoc.getState(), darkMode: true });
+    useViewportStore.setState({ canvasColor: 'light' });
+    render(<App />);
+    expect(document.querySelector('.app')!.getAttribute('data-theme')).toBe('dark');
+    expect(paper()).toBeNull();
   });
 
   it('keeps the guide wells inside the marked host, which is what the CSS needs', () => {

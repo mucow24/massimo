@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useDoc } from './store';
-import { useViewportStore, type DayCanvasColor } from './viewportStore';
+import { useViewportStore, type CanvasColor } from './viewportStore';
 import type { GuideColor } from '../model/types';
 
 /**
@@ -119,16 +119,17 @@ export interface ThemeColors {
    * `data-paper` (MapCanvas stamps it from here; styles.css holds the values).
    *
    * They cannot read the chrome's `data-theme`, because the chrome and the
-   * paper disagree in BOTH directions — an "Always dark" chrome darkens the
-   * toolbar over a still-light map, and the gray/black day papers darken the map under
-   * a still-light toolbar. So the question is answered here, where the papers
-   * are, rather than being re-derived from `darkMode` and `dayCanvasColor` at
-   * the call site and drifting the next time a paper is added.
+   * paper disagree in BOTH directions — a "Dark" chrome darkens the toolbar
+   * over a still-light map, and a gray or dark paper darkens the map under a
+   * still-light toolbar. So the question is answered here, where the papers
+   * are, rather than being re-derived from `darkMode` and `canvasColor` at the
+   * call site and drifting the next time a paper is added.
    *
-   * It does NOT mean "use the night palette". On a dimmed day paper the SVG ink
-   * above deliberately stays day — that is the whole point of the setting (see
-   * DAY_PAPER) — so `accent`, `alignGuide` and `phantomDot` are the day values
-   * over a gray or black canvas, and the wells are the one thing that departs.
+   * It does NOT mean "use the night palette". On a pinned paper the SVG ink
+   * above deliberately stays the mode's own — that is the whole point of the
+   * setting (see DAY_PAPER / NIGHT_PAPER) — so `accent`, `alignGuide` and
+   * `phantomDot` are the day values over a gray or black day canvas, and the
+   * wells are the one thing that departs.
    */
   darkPaper: boolean;
 }
@@ -197,54 +198,62 @@ const DARK: ThemeColors = {
 };
 
 /**
- * Day mode with the paper dimmed — the "reduce glare without going to night
- * mode" preference. Day-mode ink, underlay and editor stay put, so it reads as
- * day mode with the lights down, not night. 'gray' (#616161, Material Grey
- * 700) is the middle rung between white and black.
+ * The three papers a mode can be pinned to — the "Canvas color" preference.
+ * One table per mode: the mode's ink, underlay and editor stay put and only
+ * the paper moves, so a dimmed day map reads as day mode with the lights down
+ * (glare relief, not night), and a lifted night map as night ink on light
+ * paper. 'gray' (#616161, Material Grey 700) is the middle rung; 'light' and
+ * 'dark' are the two modes' own papers, so each mode's own-paper entry IS its
+ * base palette and the other mode's paper is borrowed from that base.
  *
  * Two fields break "only the paper moves", both because they are read AGAINST
  * the paper. The grid: the day grid is tuned to whisper against near-white, so
  * on a dimmed paper it reads as a cage of bright white lines — gray drops it to
- * Grey 800, one rung below its paper; black shares DARK's canvas, so it takes
- * DARK's grid, referenced rather than copied so the two can't drift apart. And
- * `darkPaper`, which is what the guide wells' ink follows: a dimmed paper is a
- * dark one whatever the mode says.
+ * Grey 800, one rung below its paper, and a borrowed paper brings the grid
+ * already tuned for it, referenced rather than copied so the two can't drift
+ * apart. And `darkPaper`, which is what the guide wells' ink follows: a dimmed
+ * paper is a dark one and a lifted paper a light one, whatever the mode says.
  *
  * What licenses those exceptions is EXPORT REACH, not taste. `canvasBg` is
  * stripped as `data-bg` and the grid renders inside a `data-export-exclude`
  * subtree, so both are screen-only and free to follow a local viewing
  * preference. `underlay` is not: it is real map paint (dash gaps, hollow
- * bullets), so dimming it here would bake one machine's glare setting into
+ * bullets), so moving it here would bake one machine's glare setting into
  * every SVG/PNG/PDF. Same "it should match the paper" argument, opposite
  * answer — check which side of the export door a field sits on before adding
  * to this list. Each entry is a frozen constant so themeColors stays
  * referentially stable per input.
  */
-const DAY_PAPER: Record<DayCanvasColor, ThemeColors> = {
-  white: LIGHT,
-  gray: { ...LIGHT, canvasBg: '#616161', grid: '#424242', darkPaper: true },
-  black: { ...LIGHT, canvasBg: DARK.canvasBg, grid: DARK.grid, darkPaper: true },
+type PinnedPaper = Exclude<CanvasColor, 'auto'>;
+const GRAY_PAPER = { canvasBg: '#616161', grid: '#424242', darkPaper: true } as const;
+const DAY_PAPER: Record<PinnedPaper, ThemeColors> = {
+  light: LIGHT,
+  gray: { ...LIGHT, ...GRAY_PAPER },
+  dark: { ...LIGHT, canvasBg: DARK.canvasBg, grid: DARK.grid, darkPaper: true },
+};
+const NIGHT_PAPER: Record<PinnedPaper, ThemeColors> = {
+  light: { ...DARK, canvasBg: LIGHT.canvasBg, grid: LIGHT.grid, darkPaper: false },
+  gray: { ...DARK, ...GRAY_PAPER },
+  dark: DARK,
 };
 
 /**
- * Pure mode → palette mapping. Exported for unit tests and non-React callers.
- * `dayCanvasColor` (a local viewing preference) only affects day mode; night
- * mode is always black, so the argument is ignored there. Falls back to the
- * plain day palette if a stale/unknown value ever reaches here from storage.
+ * Pure (mode, paper) → palette mapping. Exported for unit tests and non-React
+ * callers. `canvasColor` (a local viewing preference) pins the paper; 'auto' is
+ * the mode's own. Falls back to the mode's plain palette if a stale/unknown
+ * value ever reaches here from storage.
  */
-export function themeColors(
-  darkMode: boolean,
-  dayCanvasColor: DayCanvasColor = 'white',
-): ThemeColors {
-  if (darkMode) return DARK;
-  return DAY_PAPER[dayCanvasColor] ?? LIGHT;
+export function themeColors(darkMode: boolean, canvasColor: CanvasColor = 'auto'): ThemeColors {
+  const papers = darkMode ? NIGHT_PAPER : DAY_PAPER;
+  const paper = canvasColor === 'auto' ? (darkMode ? 'dark' : 'light') : canvasColor;
+  return papers[paper] ?? (darkMode ? DARK : LIGHT);
 }
 
 /** Canvas-side color palette for the active theme. The document's `darkMode`
  *  picks day vs night (so loading a night map paints night with no extra
- *  wiring); the local `dayCanvasColor` preference then dims the day paper. */
+ *  wiring); the local `canvasColor` preference then pins the paper. */
 export function useThemeColors(): ThemeColors {
   const darkMode = useDoc((s) => s.darkMode);
-  const dayCanvasColor = useViewportStore((s) => s.dayCanvasColor);
-  return useMemo(() => themeColors(darkMode, dayCanvasColor), [darkMode, dayCanvasColor]);
+  const canvasColor = useViewportStore((s) => s.canvasColor);
+  return useMemo(() => themeColors(darkMode, canvasColor), [darkMode, canvasColor]);
 }

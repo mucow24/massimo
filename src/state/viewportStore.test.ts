@@ -27,7 +27,7 @@ beforeEach(() => {
     showTextLabels: true,
     showPolygons: true,
     showRouteBullets: true,
-    dayCanvasColor: 'white',
+    canvasColor: 'auto',
     interfaceTheme: 'auto',
   });
 });
@@ -278,42 +278,46 @@ describe('viewportStore — showAnchors', () => {
   });
 });
 
-describe('viewportStore — the stored day-paper choice is judged on the way in', () => {
-  const store = (dayCanvasColor: unknown) =>
+describe('viewportStore — the stored paper choice is judged on the way in', () => {
+  const store = (canvasColor: unknown) =>
     localStorage.setItem(
       'massimo-viewport',
-      JSON.stringify({ state: { dayCanvasColor }, version: 0 }),
+      JSON.stringify({ state: { canvasColor }, version: 0 }),
     );
+
+  it("defaults to 'auto': the paper follows the map mode", () => {
+    expect(useViewportStore.getInitialState().canvasColor).toBe('auto');
+  });
 
   it('keeps a paper the ladder still offers', async () => {
     store('gray');
     await useViewportStore.persist.rehydrate();
-    expect(useViewportStore.getState().dayCanvasColor).toBe('gray');
+    expect(useViewportStore.getState().canvasColor).toBe('gray');
   });
 
-  // A paper the ladder no longer offers has no way back: nothing on the View
+  // A paper the ladder no longer offers has no way back: nothing on the Map
   // menu can name it, so it would sit in the store for good, painting the
-  // fallback day palette while the menu shows a choice the user never made.
+  // fallback palette while the menu shows a choice the user never made.
   it('heals a paper the ladder no longer offers back to the default', async () => {
     store('chartreuse');
     await useViewportStore.persist.rehydrate();
-    expect(useViewportStore.getState().dayCanvasColor).toBe('white');
+    expect(useViewportStore.getState().canvasColor).toBe('auto');
   });
 
   it('heals a paper of the wrong TYPE too — a blob is only ever JSON', async () => {
     store(3);
     await useViewportStore.persist.rehydrate();
-    expect(useViewportStore.getState().dayCanvasColor).toBe('white');
+    expect(useViewportStore.getState().canvasColor).toBe('auto');
   });
 
   it('leaves the live paper alone when the blob predates the field', async () => {
-    useViewportStore.setState({ dayCanvasColor: 'black' });
+    useViewportStore.setState({ canvasColor: 'dark' });
     localStorage.setItem(
       'massimo-viewport',
       JSON.stringify({ state: { gridVisible: false }, version: 0 }),
     );
     await useViewportStore.persist.rehydrate();
-    expect(useViewportStore.getState().dayCanvasColor).toBe('black');
+    expect(useViewportStore.getState().canvasColor).toBe('dark');
     expect(useViewportStore.getState().gridVisible).toBe(false); // control
   });
 });
