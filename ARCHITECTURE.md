@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `a6c364b` (2026-09-01, #555) — verified against the live source.** This
+**Up to date as of commit `fcebb00` (2026-09-02, #561) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -259,6 +259,9 @@ src/
     lineListOrder.ts            # pure lines-list ordering: sort by name/#stops, group by style
     SortHeader.tsx              # shared clickable sort-column header (the stations list's two)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
+    sidebarLayout.ts            # the sidebar's WIDTH + `sidebarVisible` gate, in a leaf module:
+                                #   the canvas chrome that gives way to the strip reads them
+                                #   without dragging the panel's whole tree in behind two facts
     BrandBullet.tsx             # the wordmark: an "M" route bullet (black disc/white M; night
                                 #   inverts) — the toolbar badge, reused by the easter-egg ball
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
@@ -691,12 +694,19 @@ See [swatchRef.ts](src/model/swatchRef.ts).
   any mix of the eight selectable kinds) mounts one shared `SelectionPopover` with Lock all /
   Unlock all / Delete all (`setItemsLocked` — one undo entry; delete shares the Delete key's
   unlocked-subset semantics via `state/selectionOps.ts`), so **Alt+marquee → Unlock all** is
-  the mass-unlock path (and Lock all the mass-lock). Free transfer anchors are the one kind
-  with **no `locked` field at all**, so Lock all counts them out (`lockableTotal`)
-  while Delete all still counts them in. Line circles and alignment guides (the seventh and
-  eighth kinds) do lock — a locked one refuses drag/nudge/group-tow/delete and is click-through
-  while unselected (a locked guide keeps ATTRACTING snaps, though — lock protects position, not
-  usefulness).
+  the mass-unlock path (and Lock all the mass-lock). Which kinds lock is one registry,
+  `LOCKABLE_COLLECTIONS` (transforms.ts) — the id-list key a selection arrives under paired with
+  the `MapDoc` collection it addresses. `LockableItemIds`, `setItemsLocked` and `lockedItemCount`
+  (the popover's tally) all derive from it, the `VISIBILITY_ITEMS` argument one subsystem over: a
+  set spelled out at three call sites is a set two of them will keep, and here the silent failure
+  is a Lock all that stays enabled over an already-locked selection. `SelectionItemIds` carries a
+  list per kind and pins its own coverage as a type (`SelectionCoversLockable`), since
+  `LockableItemIds` is all-optional and a forgotten kind would type-check and then score zero.
+  Free transfer anchors are the one kind with **no `locked` field at all**, so they stay out of
+  the registry and Lock all counts them out (`lockableTotal`) while Delete all still counts them
+  in. Line circles and alignment guides (the seventh and eighth kinds) do lock — a locked one
+  refuses drag/nudge/group-tow/delete and is click-through while unselected (a locked guide keeps
+  ATTRACTING snaps, though — lock protects position, not usefulness).
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),

@@ -3,7 +3,7 @@ import { useSelection } from '../../state/store';
 import { useRenderDoc } from '../../state/renderDoc';
 import { useViewportStore } from '../../state/viewportStore';
 import type { SegmentBandSpec } from '../../geometry/interlining';
-import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
+import { SIDEBAR_WIDTH, sidebarVisible } from '../sidebarLayout';
 import { useDock } from './useDock';
 
 // Resting inset from the window's bottom-right corner; `bottom` lives in

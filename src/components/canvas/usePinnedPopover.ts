@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useSelection } from '../../state/store';
-import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
+import { SIDEBAR_WIDTH, sidebarVisible } from '../sidebarLayout';
 import { useDock } from './useDock';
 
 export interface PinnedPopover {

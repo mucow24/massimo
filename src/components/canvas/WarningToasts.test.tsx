@@ -8,7 +8,7 @@ import type { SegmentBandSpec } from '../../geometry/interlining';
 import { DEFAULT_DOC } from '../../model/transforms';
 import type { Line, Station } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
-import { SIDEBAR_WIDTH } from '../Sidebar';
+import { SIDEBAR_WIDTH } from '../sidebarLayout';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });

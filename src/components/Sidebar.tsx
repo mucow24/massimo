@@ -12,6 +12,9 @@ import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
 import { lineDisplayName } from '../model/lineNaming';
 import { SIDEBAR_TABS, type SidebarTab } from '../state/selection';
+// The panel's own layout facts, in a leaf module the canvas-side chrome can
+// read without importing this component (see sidebarLayout.ts).
+import { sidebarVisible } from './sidebarLayout';
 
 /** Each tab's name in the strip; the count follows it in a badge. Keyed by the
  *  ladder for the same reason `tabCounts` is — a new tab fails to compile until
@@ -23,20 +26,6 @@ const TAB_LABELS: Record<SidebarTab, string> = {
 };
 
 type StationSortColumn = 'name' | 'stops';
-
-// Panel width — matches `.sidebar` in styles.css. The sidebar floats OVER the
-// canvas host's right edge and stacks ABOVE the item popovers (.canvas-host
-// isolation), so the popovers' top-right dock subtracts this strip while the
-// panel shows.
-export const SIDEBAR_WIDTH = 320;
-
-/** Whether the sidebar panel is actually showing (mirrors Sidebar's render
- * gate): open, and not ceded to a pinned top-right editor popover — the
- * station layout editor's, or the line editor's (Edit Stops). */
-export const sidebarVisible = (s: { sidebarOpen: boolean; uiMode: { kind: string } }): boolean =>
-  s.sidebarOpen &&
-  s.uiMode.kind !== 'editing-station-layout' &&
-  s.uiMode.kind !== 'appending-to-line';
 
 // Name-sort bucket: 0 for a "traditional" name (cleaned text begins with a
 // letter or digit), 1 for anything else — an empty name, or one starting with a

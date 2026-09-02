@@ -50,7 +50,7 @@ import { dotSizeOverride } from '../model/dotSize';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { overdrawnViewBox, panSurfaceViewBox } from './canvas/viewportMath';
-import { SIDEBAR_WIDTH, sidebarVisible } from './Sidebar';
+import { SIDEBAR_WIDTH, sidebarVisible } from './sidebarLayout';
 import { useStationDrag } from './canvas/useStationDrag';
 import { useLineCircleDrag } from './canvas/useLineCircleDrag';
 import { LineCircleView } from './LineCircleView';
