@@ -2946,16 +2946,66 @@ export function setStationLocked(doc: MapDoc, stationId: StationId, locked: bool
   return setItemsLocked(doc, { stations: [stationId] }, locked);
 }
 
+/**
+ * Every LOCKABLE kind, as the pair each consumer needs: the id-list key a
+ * selection arrives under, and the `MapDoc` collection that key addresses.
+ *
+ * The ONE enumeration — `LockableItemIds`, `setItemsLocked` and
+ * `lockedItemCount` (the selection popover's tally) all derive from it, so a
+ * kind that grows a `locked` field is added here and nowhere else. The same
+ * argument as state/visibility.ts's registry: a set spelled out at three call
+ * sites is a set two of them will keep. The silent failure here is a "Lock
+ * all" button that stays enabled over an already-locked selection, or a
+ * locked member the count never mentions.
+ *
+ * Transfer anchors are deliberately absent — they have no `locked` field, so
+ * `SelectionItemIds.anchors` simply has nothing to address here (see
+ * selectionOps.ts, and SelectionPopover's `lockableTotal`).
+ */
+export const LOCKABLE_COLLECTIONS = {
+  stations: 'stations',
+  bullets: 'routeBullets',
+  labels: 'textLabels',
+  polygons: 'polygons',
+  svgImages: 'svgImages',
+  lineCircles: 'lineCircles',
+  guides: 'guides',
+} as const satisfies Record<string, keyof MapDoc>;
+
+/** The id-list key one lockable kind arrives under. */
+export type LockableKind = keyof typeof LOCKABLE_COLLECTIONS;
+
 // A mixed multi-selection's ids, one list per lockable kind. Absent/empty
 // lists leave that collection untouched.
-export interface LockableItemIds {
-  stations?: readonly StationId[];
-  bullets?: readonly string[];
-  labels?: readonly string[];
-  polygons?: readonly string[];
-  svgImages?: readonly string[];
-  lineCircles?: readonly string[];
-  guides?: readonly string[];
+export type LockableItemIds = Partial<Record<LockableKind, readonly string[]>>;
+
+/** The doc fields a lock read or write touches — the lockable collections and
+ *  nothing else. Structural so both `MapDoc` and the canvas render source's
+ *  `DocSnapshot` satisfy it (the popover counts off the render source). */
+export type LockableDoc = {
+  [K in (typeof LOCKABLE_COLLECTIONS)[LockableKind]]: Record<string, { locked?: boolean }>;
+};
+
+const LOCKABLE_ENTRIES = Object.entries(LOCKABLE_COLLECTIONS) as ReadonlyArray<
+  [LockableKind, (typeof LOCKABLE_COLLECTIONS)[LockableKind]]
+>;
+
+/**
+ * How many of `ids`' members are currently locked — the selection popover's
+ * tally, read off the registry rather than a second hand-written sweep, so it
+ * can never fall behind what `setItemsLocked` actually writes. Members that
+ * momentarily fail to resolve (a mid-delete render) count as unlocked;
+ * `reconcileWithDoc` prunes dangling ids right after.
+ */
+export function lockedItemCount(doc: LockableDoc, ids: LockableItemIds): number {
+  let n = 0;
+  for (const [kind, collection] of LOCKABLE_ENTRIES) {
+    const rec = doc[collection];
+    for (const id of ids[kind] ?? []) {
+      if (rec[id]?.locked) n++;
+    }
+  }
+  return n;
 }
 
 // Flip `locked` on the listed members of one collection, allocating a new
@@ -2991,25 +3041,16 @@ function setLockedIn<T extends { locked?: boolean }>(
 // a single undo entry. Unknown ids and members already at the requested state
 // are skipped; when nothing flips, the input doc comes back unchanged.
 export function setItemsLocked(doc: MapDoc, ids: LockableItemIds, locked: boolean): MapDoc {
-  const stations = setLockedIn(doc.stations, ids.stations, locked);
-  const routeBullets = setLockedIn(doc.routeBullets, ids.bullets, locked);
-  const textLabels = setLockedIn(doc.textLabels, ids.labels, locked);
-  const polygons = setLockedIn(doc.polygons, ids.polygons, locked);
-  const svgImages = setLockedIn(doc.svgImages, ids.svgImages, locked);
-  const lineCircles = setLockedIn(doc.lineCircles, ids.lineCircles, locked);
-  const guides = setLockedIn(doc.guides, ids.guides, locked);
-  if (
-    stations === doc.stations &&
-    routeBullets === doc.routeBullets &&
-    textLabels === doc.textLabels &&
-    polygons === doc.polygons &&
-    svgImages === doc.svgImages &&
-    lineCircles === doc.lineCircles &&
-    guides === doc.guides
-  ) {
-    return doc;
+  // Only the collections that actually flipped go into the spread — an
+  // untouched one keeps its reference either way, and an empty patch returns
+  // `doc` itself (reference equality → history grouping sees no write).
+  const patch: Record<string, unknown> = {};
+  for (const [kind, collection] of LOCKABLE_ENTRIES) {
+    const rec = (doc as LockableDoc)[collection];
+    const next = setLockedIn(rec, ids[kind], locked);
+    if (next !== rec) patch[collection] = next;
   }
-  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages, lineCircles, guides };
+  return Object.keys(patch).length === 0 ? doc : { ...doc, ...patch };
 }
 
 // The covered per-station typography fields a station style controls. The patch

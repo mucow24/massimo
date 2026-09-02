@@ -1,3 +1,4 @@
+import type { LockableKind } from '../model/transforms';
 import type { StationId } from '../model/types';
 import { isHistoryGrouping } from './history';
 import { beginHistoryGroup, getCopyableSelection, useDoc, useSelection } from './store';
@@ -25,6 +26,18 @@ export interface SelectionItemIds {
   lineCircles: string[];
   guides: string[];
 }
+
+// Every lockable kind has a list above. `LockableItemIds` is all-optional, so a
+// registry kind this struct forgot would type-check and then silently score
+// zero in the bulk lock and in the popover's tally — a "Lock all" that never
+// finishes and a count that never mentions it. Spelled as a type rather than a
+// test, the same way store.ts pins the doc-field tuple: `never` while the
+// coverage holds, and otherwise a constraint violation naming the missing kind,
+// at this line, in the editor. Exported because `noUnusedLocals` would
+// otherwise flag it.
+export type SelectionCoversLockable<
+  T extends never = Exclude<LockableKind, keyof SelectionItemIds>,
+> = T;
 
 /**
  * The selection an edit may actually act on: minus locked members, and minus
@@ -124,19 +137,21 @@ export function stationsCarriedByCircles(circleIds: readonly string[]): Readonly
   return out;
 }
 
+/**
+ * How many items the selection holds, across every kind.
+ *
+ * Summed over the struct's own lists rather than a written-out addition per
+ * kind: every field of {@link SelectionItemIds} IS one of these lists, so a
+ * kind added to the interface counts the moment `unlockedSelectedItemIds`
+ * (which the type forces to be complete) fills it in. `anchors` is the case
+ * that proves the rule — both bulk gestures gate on this count being non-zero,
+ * so an anchor-only selection dropped from the sum would silently ignore
+ * Delete and the arrow keys.
+ */
 export function itemIdCount(ids: SelectionItemIds): number {
-  return (
-    ids.stations.length +
-    ids.bullets.length +
-    ids.labels.length +
-    ids.polygons.length +
-    ids.svgImages.length +
-    // MANDATORY: both bulk gestures gate on this count being non-zero, so an
-    // anchor-only selection would silently ignore Delete and the arrow keys.
-    ids.anchors.length +
-    ids.lineCircles.length +
-    ids.guides.length
-  );
+  let n = 0;
+  for (const list of Object.values(ids)) n += list.length;
+  return n;
 }
 
 /**

@@ -3,7 +3,7 @@ import { useRenderDoc } from '../../state/renderDoc';
 import { useViewportStore } from '../../state/viewportStore';
 import { kindVisible, type VisibilityKey } from '../../state/visibility';
 import { itemIdCount, type SelectionItemIds } from '../../state/selectionOps';
-import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
+import { SIDEBAR_WIDTH, sidebarVisible } from '../sidebarLayout';
 import { LinePopover } from '../LinePopover';
 import { SelectionPopover } from '../SelectionPopover';
 import { RouteBulletPopover } from '../RouteBulletPopover';
