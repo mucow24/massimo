@@ -16,7 +16,7 @@ async function clickStation(page: Page, id: string): Promise<void> {
 // Stations of the (single) line, read straight from the persisted doc.
 async function readLineStations(page: Page): Promise<string[]> {
   return await page.evaluate(() => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     if (!raw) return [];
     const lines = JSON.parse(raw).state.lines as Record<string, { stations: string[] }>;
     const all = Object.values(lines);
@@ -26,7 +26,7 @@ async function readLineStations(page: Page): Promise<string[]> {
 
 async function stationRotation(page: Page, id: string): Promise<number> {
   return await page.evaluate((sid) => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     if (!raw) throw new Error('no persisted doc');
     return JSON.parse(raw).state.stations[sid].rotation as number;
   }, id);

@@ -246,14 +246,55 @@ test.describe('version tagging', () => {
 test('two maps may share a name', async ({ page }) => {
   await seedAndOpen(page, fourInLine);
   await saveToLibrary(page);
-  // New mints a fresh library id, so the next save under the same title is a
+  // The same content on another map id: the save under the same title is a
   // second MAP rather than a second version of the first. Names do not key the
   // library — ids do.
-  await clickNew(page);
-  await seedAndOpen(page, fourInLine); // content again, still on the new id
+  await seedAndOpen(page, fourInLine, { mapId: 'second-map' });
   await saveToLibrary(page);
 
   await openLibrary(page);
   await expect(page.locator('.map-row')).toHaveCount(2);
   await expect(page.locator('.map-row strong')).toHaveText(['Untitled map', 'Untitled map']);
+});
+
+/**
+ * The tab IS a map: its id rides in the URL, so a reload after a clean save —
+ * which releases the working copy — comes back on the saved version from the
+ * library, and a second tab on the same URL is the same map.
+ */
+test('a map’s URL survives a reload and reopens it from the library', async ({ page }) => {
+  await seedAndOpen(page, fourInLine);
+  await expect(page).toHaveURL(/#map=e2e-map$/);
+  await renameTo(page, 'Untitled map', 'By URL');
+  await saveToLibrary(page);
+  await expect(saveDot(page)).toBeHidden();
+
+  await page.reload();
+  await page.waitForSelector('.canvas-host svg');
+  await expect(page.getByRole('button', { name: 'By URL' })).toBeVisible();
+  await expect(page.locator('[data-station-id]')).toHaveCount(4);
+  await expect(page.locator('.map-version-pill')).toHaveText('v1');
+  await expect(saveDot(page)).toBeHidden();
+
+  // New moves the tab to a fresh map — a different URL.
+  await clickNew(page);
+  await expect(page).not.toHaveURL(/#map=e2e-map$/);
+  await expect(page.locator('[data-station-id]')).toHaveCount(0);
+});
+
+/**
+ * One editing window per map (mapLock.ts): a second tab on the same URL gets
+ * the busy screen rather than a second editor writing into the same slot, and
+ * takes over once the first tab is gone.
+ */
+test('a second tab on the same map waits for the first to close', async ({ page, context }) => {
+  await seedAndOpen(page, fourInLine);
+  const second = await context.newPage();
+  await second.goto('/#map=e2e-map');
+  await expect(second.getByText(/already open in another window/)).toBeVisible();
+  await expect(second.locator('.canvas-host')).toHaveCount(0);
+
+  await page.close();
+  await second.waitForSelector('.canvas-host svg');
+  await expect(second.locator('[data-station-id]')).toHaveCount(4);
 });

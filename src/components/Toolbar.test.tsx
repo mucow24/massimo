@@ -87,13 +87,15 @@ import { capCenterDy } from '../geometry/textMeasure';
 import { fitViewport } from './canvas/viewportMath';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineId, StationId } from '../model/types';
+import { docKey, hasDocDraft } from '../state/mapKeys';
 
 beforeEach(() => {
   localStorage.clear();
   libState.minted = 0;
   // Toasts persist in a module store, so one test's error would greet the next.
   useToasts.setState({ toasts: [] });
-  useLibraryPointer.setState({ mapId: null, version: null });
+  // The tab is always ON a map; every per-map slot below keys by this id.
+  useLibraryPointer.setState({ mapId: 'tab-map', version: null });
   // Module state, so it outlives component mounts: without a reset, one test's
   // save vouches for the next test's doc.
   useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
@@ -643,20 +645,27 @@ describe('Toolbar — Load', () => {
       stations: { S9: stationWithStop('S9' as StationId, 'L9' as LineId, { x: 0, y: 0 }) },
     });
 
-  it('auto-saves the outgoing doc before adopting a file, and drops the library id', async () => {
+  it('auto-saves the outgoing doc before adopting a file, and gives the file a fresh identity', async () => {
     seedOutgoing();
-    // The outgoing doc came from the library, so there is a pointer to drop —
-    // the assertion below is vacuous against the null it starts at.
+    // The outgoing doc came from the library, so there is a pointer to leave
+    // behind — the assertion below is vacuous against the boot id otherwise.
     useLibraryPointer.setState({ mapId: 'lib-map', version: 7 });
     renderToolbar();
     fireEvent.change(fileInput(), { target: { files: [validFile()] } });
     await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
     expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveVersion).mock.calls[0][0]).toBe('lib-map');
     expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Outgoing');
     expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('auto');
-    // A file is not a library map — saving it must fork a new one (D2b). Both
-    // halves go: a version with no map behind it is nothing the pill can show.
-    expect(useLibraryPointer.getState()).toMatchObject({ mapId: null, version: null });
+    // A file is not a library map — saving it must fork a new one (D2b), so
+    // the tab becomes a fresh map with no version: nothing the pill can show
+    // until the first save. And the file lives in ITS slot, not the outgoing
+    // map's.
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'minted-1', version: null });
+    expect(window.location.hash).toBe('#map=minted-1');
+    expect(
+      JSON.parse(localStorage.getItem(docKey('minted-1'))!).state.stations.fromfile,
+    ).toBeDefined();
   });
 
   /**
@@ -804,8 +813,12 @@ describe('Toolbar — Load from library', () => {
   };
 
   // Outgoing work that belongs to a DIFFERENT map, so "the pointer moved to the
-  // opened version" and "the pointer was left alone" are distinguishable.
+  // opened version" and "the pointer was left alone" are distinguishable. The
+  // tab becomes that map BEFORE the doc is written, so the doc's working copy
+  // lands in that map's slot — as it would in the app; with no working copy
+  // the toolbar's boot would fetch the (mocked) library row over it.
   const seedOutgoing = () => {
+    useLibraryPointer.setState({ mapId: 'other-map', version: 9 });
     useDoc.setState({
       ...useDoc.getState(),
       name: 'Outgoing',
@@ -813,7 +826,6 @@ describe('Toolbar — Load from library', () => {
       lineOrder: ['L9' as LineId],
       stations: { S9: stationWithStop('S9' as StationId, 'L9' as LineId, { x: 0, y: 0 }) },
     });
-    useLibraryPointer.setState({ mapId: 'other-map', version: 9 });
   };
 
   const libraryPayload = () =>
@@ -851,6 +863,48 @@ describe('Toolbar — Load from library', () => {
     // Unlike a file, a version IS a library map: keep working in its history,
     // and show the version the document actually came from.
     expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'm1', version: 3 });
+    expect(window.location.hash).toBe('#map=m1');
+  });
+
+  it('the opened document works in ITS map’s slot, not the outgoing map’s', async () => {
+    const user = userEvent.setup();
+    seedLibraryRow();
+    vi.mocked(getPayload).mockResolvedValue(libraryPayload());
+    seedOutgoing();
+    renderToolbar();
+    await clickOpen(user);
+    await waitFor(() => expect(useDoc.getState().stations.fromlib).toBeDefined());
+    // Clean on arrival, so no working copy anywhere; the first edit makes one,
+    // and it must be the opened map's.
+    expect(hasDocDraft('m1')).toBe(false);
+    act(() => useDoc.getState().setDocName('Edited after opening'));
+    expect(hasDocDraft('m1')).toBe(true);
+    expect(hasDocDraft('other-map')).toBe(false);
+  });
+
+  /**
+   * A map another window was closed on with unsaved work still has a working
+   * copy. Opening one of its versions from here must not write the version
+   * over the only copy of that work: the map opens onto the work instead,
+   * exactly as its URL would, and says so.
+   */
+  it('opens onto a map’s stranded working copy rather than over it', async () => {
+    const user = userEvent.setup();
+    seedLibraryRow();
+    vi.mocked(getPayload).mockResolvedValue(libraryPayload());
+    seedOutgoing();
+    localStorage.setItem(
+      docKey('m1'),
+      JSON.stringify({ state: { ...DEFAULT_DOC, name: 'Stranded work' }, version: 30 }),
+    );
+    renderToolbar();
+    await clickOpen(user);
+    await waitFor(() => expect(useLibraryPointer.getState().mapId).toBe('m1'));
+    expect(useDoc.getState().name).toBe('Stranded work');
+    expect(useDoc.getState().stations.fromlib).toBeUndefined();
+    expect(saveVersion).toHaveBeenCalledTimes(1); // the outgoing doc, as ever
+    const toast = await findToast(/unsaved changes/);
+    expect(toast).toHaveTextContent('v3 is still in the library');
   });
 
   it('a version opened from the library reads clean — it IS the library copy', async () => {
@@ -966,12 +1020,13 @@ describe('Toolbar — map library', () => {
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(saveVersion).toHaveBeenCalledWith(
-      'minted-1',
+      'tab-map', // the map the tab IS — a save never mints one
       'My Map',
       serialize(pickDocSnapshot(useDoc.getState())),
       'user',
       'data:image/png;base64,THUMB',
     );
+    expect(newMapId).not.toHaveBeenCalled();
   });
 
   // An empty canvas throws in buildExportSvg. That must cost the picture, not
@@ -1018,7 +1073,7 @@ describe('Toolbar — map library', () => {
     expect(useLibraryPointer.getState().version).toBe(32);
   });
 
-  it('a second save reuses the id the first one minted', async () => {
+  it('every save goes under the tab’s own map', async () => {
     const user = userEvent.setup();
     seedRealMap();
     renderToolbar();
@@ -1029,8 +1084,8 @@ describe('Toolbar — map library', () => {
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(2));
     const ids = vi.mocked(saveVersion).mock.calls.map((c) => c[0]);
-    expect(ids).toEqual(['minted-1', 'minted-1']);
-    expect(newMapId).toHaveBeenCalledTimes(1);
+    expect(ids).toEqual(['tab-map', 'tab-map']);
+    expect(newMapId).not.toHaveBeenCalled();
   });
 
   it('New auto-saves the outgoing doc, then wipes it and mints a fresh id', async () => {
@@ -1050,8 +1105,14 @@ describe('Toolbar — map library', () => {
     expect(historyDepth()).toBe(0);
     expect(useViewportStore.getState()).toMatchObject({ x: 0, y: 0, zoom: 1 });
     // A fresh map: an id of its own (not the one the auto-save just wrote
-    // under), and no version until something is saved beneath it.
-    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'minted-2', version: null });
+    // under), in the URL, and no version until something is saved beneath it.
+    expect(vi.mocked(saveVersion).mock.calls[0][0]).toBe('tab-map');
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'minted-1', version: null });
+    expect(window.location.hash).toBe('#map=minted-1');
+    // The outgoing map's working copy went to the library; the fresh map's is
+    // the empty doc, in its own slot.
+    expect(hasDocDraft('tab-map')).toBe(false);
+    expect(hasDocDraft('minted-1')).toBe(true);
   });
 
   it('New ABORTS without wiping when the auto-save fails', async () => {
@@ -1110,7 +1171,7 @@ describe('Toolbar — map library', () => {
     vi.mocked(captureThumbnail).mockClear();
 
     await clickNew(user);
-    await waitFor(() => expect(useLibraryPointer.getState().mapId).toBe('minted-2'));
+    await waitFor(() => expect(useLibraryPointer.getState().mapId).toBe('minted-1'));
     // Still just the explicit save — the auto-save deduped against it.
     expect(saveVersion).toHaveBeenCalledTimes(1);
     // And it deduped BEFORE paying for a thumbnail.
@@ -1214,17 +1275,23 @@ describe('Toolbar — Make a copy', () => {
   it('a loaded file forks straight to the copy — no checkpoint map is minted for it', async () => {
     const user = userEvent.setup();
     seedSourceMap();
-    useLibraryPointer.setState({ mapId: null, version: null });
-    anchor(markAdopted); // a loaded file: clean bytes, no library copy
+    // A loaded file: an identity of its own but no version, and clean bytes
+    // the library has no copy of.
+    useLibraryPointer.setState({ mapId: 'file-id', version: null });
+    anchor(markAdopted);
     useDoc.getState().setDocName('Edited file'); // dirty, and in no library row
     renderToolbar();
     await makeCopy(user);
     await findToast(/Copy of Edited file/);
-    // The copy itself preserves the bytes; there is no source map whose
-    // history a checkpoint could update, so none is fabricated.
+    // The copy itself preserves the bytes; there is no source history a
+    // checkpoint could update, so none is fabricated.
     expect(saveVersion).toHaveBeenCalledTimes(1);
     expect(vi.mocked(saveVersion).mock.calls[0][0]).toBe('minted-1');
     expect(newMapId).toHaveBeenCalledTimes(1);
+    // The canvas continues under the copy's identity, working copy and all.
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'minted-1', version: 1 });
+    expect(window.location.hash).toBe('#map=minted-1');
+    expect(hasDocDraft('file-id')).toBe(false);
   });
 
   it('a failed copy save changes nothing — name, pointer and baseline stay the source’s', async () => {
@@ -1577,10 +1644,9 @@ describe('Toolbar — Ctrl+S saves a version', () => {
   /**
    * The clean-state gate cannot suppress a second press: it does not flip
    * until markSaved runs, two awaits later (thumbnail rasterization, then the
-   * IndexedDB write). Every press that lands inside that window re-reads a
-   * pointer nobody has set yet and mints a library map of its own — so a held
-   * key deposits one map per repeat, each with its own v1, none of them
-   * prunable.
+   * IndexedDB write). Every press that lands inside that window would write
+   * a version of its own — so a held key deposits one version per repeat,
+   * none of them prunable.
    */
   it('drops auto-repeats: holding Ctrl+S saves once, not once per repeat', async () => {
     seedMap('Canal Line');
@@ -1594,7 +1660,6 @@ describe('Toolbar — Ctrl+S saves a version', () => {
     await settle();
 
     expect(saveVersion).toHaveBeenCalledTimes(1);
-    expect(newMapId).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a second press while the first save is still in flight', async () => {
@@ -1617,10 +1682,10 @@ describe('Toolbar — Ctrl+S saves a version', () => {
     await settle();
 
     expect(saveVersion).toHaveBeenCalledTimes(1);
-    // The worse half of the same bug: with no pointer yet, a second pass reads
-    // the same null and forks a whole second library map from one document.
-    expect(newMapId).toHaveBeenCalledTimes(1);
-    expect(useLibraryPointer.getState().mapId).toBe('minted-1');
+    // Both passes would have written under the same map — the tab's own; a
+    // save never mints one.
+    expect(vi.mocked(saveVersion).mock.calls[0][0]).toBe('tab-map');
+    expect(newMapId).not.toHaveBeenCalled();
   });
 
   it('re-arms once the save has landed', async () => {

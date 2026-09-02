@@ -7,7 +7,7 @@ async function readState(page: Page): Promise<{
   stations: Record<string, { x: number; y: number }>;
 }> {
   return await page.evaluate(() => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     const s = raw ? JSON.parse(raw).state : {};
     return { polygons: s.polygons ?? {}, stations: s.stations ?? {} };
   });

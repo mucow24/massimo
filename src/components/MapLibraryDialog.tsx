@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as HoverCard from '@radix-ui/react-hover-card';
 import * as Toggle from '@radix-ui/react-toggle';
-import { Cross2Icon, StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
+import { Cross2Icon, ExternalLinkIcon, StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
 import {
   deleteMap,
   deleteVersion,
   listMaps,
   listVersions,
+  newMapId,
   renameMap,
   setMapStarred,
   setVersionName,
@@ -23,6 +24,8 @@ import { useLibraryPointer } from '../state/libraryPointer';
 import { useLibraryPrefs } from '../state/libraryPrefs';
 import { markUnbacked } from '../state/saveBaseline';
 import { useDoc } from '../state/store';
+import { retargetTab } from '../state/mapTab';
+import { hasDocDraft, mapUrl } from '../state/mapKeys';
 import { DialogSortSelect } from './dialogRow';
 
 interface Props {
@@ -306,13 +309,14 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
     }
     // A stale pointer would resurrect the row: saveVersion's write to the maps
     // store is an upsert, so the very next save re-creates what we just deleted.
-    // The baseline goes with it — the library no longer holds the live doc's
-    // bytes, and anything still treating it as "already saved" would decline
-    // to save a document that now exists nowhere else. Only the dialog knows:
-    // upstream, a cleared pointer looks identical to opening a JSON file, and
-    // that document is safe on disk.
+    // So the live doc continues under a fresh identity — its next save makes a
+    // new map. The baseline goes with it — the library no longer holds the
+    // live doc's bytes, and anything still treating it as "already saved"
+    // would decline to save a document that now exists nowhere else. Only the
+    // dialog knows: upstream, a fresh identity looks identical to opening a
+    // JSON file, and that document is safe on disk.
     if (useLibraryPointer.getState().mapId === id) {
-      useLibraryPointer.getState().setPointer(null, null);
+      await retargetTab(newMapId());
       markUnbacked();
     }
     if (selectedMapId === id) {
@@ -511,9 +515,26 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                         <span className="dialog-row-meta">
                           {m.versionCount} version{m.versionCount === 1 ? '' : 's'} ·{' '}
                           {when(m.updatedAt)}
+                          {/* A working copy the library does not hold (mapKeys.ts):
+                              edits in this window, or left by one since closed. */}
+                          {hasDocDraft(m.id) && (
+                            <span className="map-row-draft"> · unsaved changes</span>
+                          )}
                         </span>
                       </div>
                       <div className="dialog-row-actions" onClick={(e) => e.stopPropagation()}>
+                        {/* A real link: the map's own URL, so a middle-click or a
+                            bookmark works the way it does for any document. */}
+                        <a
+                          className="map-row-link"
+                          href={mapUrl(m.id)}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Open ${m.name} in a new tab`}
+                          title="Open in a new tab"
+                        >
+                          <ExternalLinkIcon />
+                        </a>
                         <StarToggle
                           starred={m.starred ?? false}
                           label={`${m.starred ? 'Unstar' : 'Star'} ${m.name}`}

@@ -28,7 +28,7 @@ const CURRENT_PERSIST_VERSION = 30;
 test('the seeded version IS the persist config version (drift guard)', () => {
   const storePath = fileURLToPath(new URL('../src/state/store.ts', import.meta.url));
   const store = readFileSync(storePath, 'utf8');
-  const m = /name: 'vignelli-map-doc-v1',[\s\S]*?version: (\d+),/.exec(store);
+  const m = /name: 'massimo-doc',[\s\S]*?version: (\d+),/.exec(store);
   expect(m, 'persist config not found in store.ts').not.toBeNull();
   expect(Number(m![1])).toBe(CURRENT_PERSIST_VERSION);
 });

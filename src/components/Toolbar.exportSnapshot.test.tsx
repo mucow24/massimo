@@ -57,7 +57,7 @@ beforeEach(() => {
   vi.mocked(exportCanvasSvg).mockClear();
   vi.mocked(captureThumbnail).mockClear();
   vi.mocked(saveVersion).mockClear();
-  useLibraryPointer.setState({ mapId: null, version: null });
+  useLibraryPointer.setState({ mapId: 'tab-map', version: null });
 });
 
 const seed = () =>

@@ -40,6 +40,7 @@ import { pickDocSnapshot, useDoc } from '../state/store';
 import { serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { chooseOption } from '../test/interaction';
+import { docKey, hasDocDraft } from '../state/mapKeys';
 
 const MAPS: MapSummary[] = [
   {
@@ -127,7 +128,7 @@ const versionNumbers = () =>
 
 beforeEach(() => {
   localStorage.clear();
-  useLibraryPointer.setState({ mapId: null, version: null });
+  useLibraryPointer.setState({ mapId: 'tab-map', version: null });
   useLibraryPrefs.setState({ sort: 'updated', starredMapsOnly: false, starredVersionsOnly: false });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   vi.mocked(listMaps).mockReset().mockResolvedValue(MAPS);
@@ -215,17 +216,43 @@ describe('MapLibraryDialog', () => {
   /**
    * Without this, the stale pointer resurrects the map: saveVersion's write to
    * the maps store is an upsert, so the next save re-creates the row we deleted.
+   * The live doc continues under a fresh identity instead — with its working
+   * copy, since those bytes now exist nowhere else.
    */
-  it('clears the current-map pointer when the current map is deleted', async () => {
+  it('moves the live doc to a fresh identity when its own map is deleted', async () => {
     const user = userEvent.setup();
     useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    useDoc.getState().setDocName('Live doc'); // writes m1's working copy
     renderDialog();
     await screen.findByText('Canal Line');
     await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
     // Both halves: a lingering version would put a pill on a map that is gone.
-    await waitFor(() => expect(useLibraryPointer.getState().mapId).toBeNull());
-    expect(useLibraryPointer.getState().version).toBeNull();
+    await waitFor(() => expect(useLibraryPointer.getState().mapId).not.toBe('m1'));
+    const { mapId, version } = useLibraryPointer.getState();
+    expect(version).toBeNull();
+    expect(window.location.hash).toBe(`#map=${mapId}`);
+    expect(hasDocDraft('m1')).toBe(false);
+    expect(JSON.parse(localStorage.getItem(docKey(mapId))!).state.name).toBe('Live doc');
+  });
+
+  it('links each map to its own URL, for a new tab', async () => {
+    renderDialog();
+    await screen.findByText('Canal Line');
+    const link = screen.getByRole('link', { name: 'Open Canal Line in a new tab' });
+    expect(link).toHaveAttribute('href', '#map=m1');
+    expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  it('marks a map that has a working copy the library does not hold', async () => {
+    localStorage.setItem(docKey('m2'), '{"state":{},"version":30}');
+    renderDialog();
+    await screen.findByText('Canal Line');
+    const rows = [...document.querySelectorAll('.map-row')];
+    const broadway = rows.find((r) => r.textContent?.includes('Broadway'))!;
+    const canal = rows.find((r) => r.textContent?.includes('Canal Line'))!;
+    expect(broadway).toHaveTextContent('unsaved changes');
+    expect(canal).not.toHaveTextContent('unsaved changes');
   });
 
   it('leaves the pointer alone when a different map is deleted', async () => {

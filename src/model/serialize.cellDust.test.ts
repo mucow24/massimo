@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parse, serialize, snapStationCells } from './serialize';
 import { migrateDoc, useDoc } from '../state/store';
+import { docKey } from '../state/mapKeys';
+import { tabMapId } from '../state/libraryPointer';
 import { makeDoc, makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
 import * as T from './transforms';
 import type { Station } from './types';
@@ -114,7 +116,7 @@ describe('cell dust is repaired on both load paths', () => {
     // `migrate` and only `merge` can do the repair. A hardcoded number silently
     // stops testing that the day the version bumps.
     localStorage.setItem(
-      'vignelli-map-doc-v1',
+      docKey(tabMapId()),
       JSON.stringify({
         version: useDoc.persist.getOptions().version,
         state: { stations: { s1: dustyStation() } },

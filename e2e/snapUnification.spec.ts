@@ -12,7 +12,7 @@ import {
 // (load-bearing in every group-drag spec but never asserted before), the
 // bullet/label/polygon snap paths, snap guides, and placement parity.
 
-const DOC_KEY = 'vignelli-map-doc-v1';
+const DOC_KEY = 'massimo-doc:e2e-map';
 
 async function readStation(page: Page, id: string): Promise<{ x: number; y: number }> {
   return await page.evaluate(

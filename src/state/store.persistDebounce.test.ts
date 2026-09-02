@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { beginHistoryGroup, flushDocPersist, pickDocSnapshot, useDoc } from './store';
 import { useToasts } from './toastStore';
 import { DEFAULT_DOC } from '../model/transforms';
+import { docKey } from './mapKeys';
+import { tabMapId } from './libraryPointer';
 
 // The doc store's localStorage write is trailing-debounced ONLY inside a
 // history group opened with `deferPersist` — the canvas drag hooks' per-frame
@@ -11,7 +13,7 @@ import { DEFAULT_DOC } from '../model/transforms';
 // do) keeps its contract. Flush points (gesture commit, undo/redo, page
 // hide) write synchronously.
 
-const KEY = 'vignelli-map-doc-v1';
+const KEY = docKey(tabMapId());
 
 function persistedDoc(): { state: Record<string, unknown>; version: number } | null {
   const raw = localStorage.getItem(KEY);

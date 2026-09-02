@@ -34,7 +34,7 @@ async function segPoint(page: Page, a: string, b: string, t = 0.5) {
 
 async function readLine(page: Page): Promise<{ stations: string[]; edges: string[] }> {
   return await page.evaluate(() => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     if (!raw) return { stations: [], edges: [] };
     const lines = JSON.parse(raw).state.lines as Record<
       string,
@@ -252,7 +252,7 @@ test('right-click anywhere during Edit Stops exits — station, segment, or back
   await expect(editing(page)).toBeHidden();
   expect(
     await page.evaluate(() => {
-      const raw = localStorage.getItem('vignelli-map-doc-v1');
+      const raw = localStorage.getItem('massimo-doc:e2e-map');
       return raw ? ((JSON.parse(raw).state.stations.B.rotation ?? 0) as number) : -1;
     }),
   ).toBe(0);
@@ -297,7 +297,7 @@ test('shift-click cycles a segment style while editing', async ({ page }) => {
   await expect
     .poll(async () =>
       page.evaluate(() => {
-        const raw = localStorage.getItem('vignelli-map-doc-v1');
+        const raw = localStorage.getItem('massimo-doc:e2e-map');
         return raw
           ? (JSON.parse(raw).state.lines.L1.segmentStyles ?? {})
           : {};
@@ -308,7 +308,7 @@ test('shift-click cycles a segment style while editing', async ({ page }) => {
 
 async function segmentStyles(page: Page): Promise<Record<string, string>> {
   return page.evaluate(() => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     return raw ? (JSON.parse(raw).state.lines.L1.segmentStyles ?? {}) : {};
   });
 }

@@ -21,7 +21,7 @@ beforeEach(() => {
   localStorage.clear();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   clearHistory();
-  useLibraryPointer.setState({ mapId: null, version: null });
+  useLibraryPointer.setState({ mapId: 'tab-map', version: null });
   useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
 });
 

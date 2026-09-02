@@ -24,7 +24,7 @@ const reshapedEnds = (page: Page) => page.locator('path[fill="#0039A6"]');
 
 async function storedLine(page: Page) {
   return await page.evaluate(() => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     return JSON.parse(raw!).state.lines.L1 as {
       endStyle?: string;
       stationEndStyles?: Record<string, string>;

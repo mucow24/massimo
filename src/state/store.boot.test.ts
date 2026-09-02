@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DEFAULT_DOC } from '../model/transforms';
+import { docKey } from './mapKeys';
 
 /**
  * What happens on a page load. persist rehydrates SYNCHRONOUSLY from inside the
@@ -7,19 +8,21 @@ import { DEFAULT_DOC } from '../model/transforms';
  * zundo partializes `undefined` there, and anything that throws on the way is
  * swallowed whole by zustand's thenable wrapper, taking the migrated write-back
  * and the hydration callbacks with it. `boot()` re-imports the module the way a
- * refresh would: localStorage survives, the module registry does not.
+ * refresh would: localStorage and the URL survive, the module registry does not.
  */
 
-const KEY = 'vignelli-map-doc-v1';
+// The tab boots on the map its URL names; the doc slot is that map's own.
+const MAP = 'boot-map';
+const KEY = docKey(MAP);
 
 const boot = async (): Promise<typeof import('./store')> => {
   vi.resetModules();
   return await import('./store');
 };
 
-const seed = (version: number): void => {
+const seed = (version: number, key = KEY): void => {
   localStorage.setItem(
-    KEY,
+    key,
     JSON.stringify({ state: { ...DEFAULT_DOC, name: 'Stored map' }, version }),
   );
 };
@@ -27,6 +30,24 @@ const seed = (version: number): void => {
 describe('boot hydration', () => {
   beforeEach(() => {
     localStorage.clear();
+    window.history.replaceState(null, '', `#map=${MAP}`);
+  });
+
+  it('reads the working copy of the map the URL names, and no other map’s', async () => {
+    seed(30, docKey('some-other-map'));
+    const other = await boot();
+    expect(other.useDoc.getState().name).toBe(DEFAULT_DOC.name);
+
+    seed(30);
+    const store = await boot();
+    expect(store.useDoc.getState().name).toBe('Stored map');
+  });
+
+  it('writes the working copy under the map’s own slot', async () => {
+    const store = await boot();
+    store.useDoc.getState().setDocName('Edited here');
+    expect(JSON.parse(localStorage.getItem(KEY)!).state.name).toBe('Edited here');
+    expect(localStorage.getItem('vignelli-map-doc-v1')).toBeNull();
   });
 
   it('finishes hydrating, and writes the migrated doc back at the current version', async () => {

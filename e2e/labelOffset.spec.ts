@@ -38,7 +38,7 @@ test.describe('Label offset textbox', () => {
     await expect(box).toHaveValue('-5.0');
     expect(
       await page.evaluate(() => {
-        const raw = localStorage.getItem('vignelli-map-doc-v1');
+        const raw = localStorage.getItem('massimo-doc:e2e-map');
         return raw ? JSON.parse(raw).state.stations.A.label.offset : null;
       }),
     ).toBe(-5);
@@ -57,7 +57,7 @@ test.describe('Label offset textbox', () => {
     await expect(box).toHaveValue('-5.5');
     expect(
       await page.evaluate(() => {
-        const raw = localStorage.getItem('vignelli-map-doc-v1');
+        const raw = localStorage.getItem('massimo-doc:e2e-map');
         return raw ? JSON.parse(raw).state.stations.A.label.offset : null;
       }),
     ).toBe(-5.5);
