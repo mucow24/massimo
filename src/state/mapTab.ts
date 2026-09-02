@@ -34,16 +34,17 @@ import { acquireMapLock, releaseMapLock } from './mapLock';
 
 export const MAP_BUSY = 'That map is open in another window. Close it there first.';
 
-/** Read by Toolbar's initial state, set by main.tsx alone (see bootedWithoutMap). */
+/**
+ * Read by Toolbar's initial state, set by main.tsx alone (see
+ * bootedWithoutMap — a unit-test render must not open a dialog because jsdom
+ * has no hash). A plain flag, not a take-once: StrictMode calls a state
+ * initializer twice in dev and keeps the second answer.
+ */
 let libraryAtBoot = false;
 export function requestLibraryAtBoot(): void {
   libraryAtBoot = true;
 }
-export function takeLibraryAtBootRequest(): boolean {
-  const v = libraryAtBoot;
-  libraryAtBoot = false;
-  return v;
-}
+export const libraryRequestedAtBoot = (): boolean => libraryAtBoot;
 
 /**
  * Point the camera at a doc's content: center it and zoom to fit, using the

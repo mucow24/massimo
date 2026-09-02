@@ -229,11 +229,11 @@ describe('retargetTab — the same document under a new identity', () => {
 });
 
 describe('the library-at-boot request', () => {
-  it('is consumed once', async () => {
+  it('is off until main.tsx asks, then stays readable (StrictMode reads twice)', async () => {
     const m = await boot();
-    expect(m.tab.takeLibraryAtBootRequest()).toBe(false);
+    expect(m.tab.libraryRequestedAtBoot()).toBe(false);
     m.tab.requestLibraryAtBoot();
-    expect(m.tab.takeLibraryAtBootRequest()).toBe(true);
-    expect(m.tab.takeLibraryAtBootRequest()).toBe(false);
+    expect(m.tab.libraryRequestedAtBoot()).toBe(true);
+    expect(m.tab.libraryRequestedAtBoot()).toBe(true);
   });
 });

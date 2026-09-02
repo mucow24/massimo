@@ -52,7 +52,7 @@ import {
   openTabMapFromLibrary,
   retargetTab,
   switchTabToMap,
-  takeLibraryAtBootRequest,
+  libraryRequestedAtBoot,
 } from '../state/mapTab';
 import { hasDocDraft } from '../state/mapKeys';
 import { MapLibraryDialog } from './MapLibraryDialog';
@@ -175,7 +175,7 @@ export function Toolbar() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   // Open at boot when the tab named no map (main.tsx): a documents app opens
   // on its list.
-  const [libraryOpen, setLibraryOpen] = useState(takeLibraryAtBootRequest);
+  const [libraryOpen, setLibraryOpen] = useState(libraryRequestedAtBoot);
   const [palettesOpen, setPalettesOpen] = useState(false);
   // A tab whose map has no working copy — a URL opened fresh, a reload after
   // a clean save — comes up on the map's library version (mapTab.ts).
