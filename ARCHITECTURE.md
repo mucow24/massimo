@@ -223,7 +223,7 @@ src/
                                 #   persist `merge` hook (member / non-member→default / absent→live)
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     fontEpoch.ts                # useFontEpoch: web-font load counter — a STORE so it crosses memo
-    theme.ts                    # themeColors(darkMode, dayCanvasColor) table (no store; reads doc.darkMode)
+    theme.ts                    # themeColors(darkMode, canvasColor) table (no store; reads doc.darkMode)
     customPalettes.ts           # useCustomPalettes: the library's user half + stars + sort
     customLineColors.ts         # useCustomLineColors(): the line colors no palette of the map
                                 #   covers, derived once for the three surfaces that show them
@@ -2427,22 +2427,24 @@ on any mode exit.
   (`showNetwork` default true — see below; `showWaypoints` and `showAnchors` default false;
   `showLineCircles`, `showGuides`, `showTransfers`, `showSvgImages`, `showTextLabels`,
   `showPolygons`, `showRouteBullets` default true), plus two **local chrome** preferences:
-  `dayCanvasColor: DayCanvasColor`
-  (the `DAY_CANVAS_COLORS` ladder `'white'|'gray'|'black'`, default white — the day-mode paper
-  color, dimming glare without touching the map) and `darkUiInDay: boolean` (default false — a
-  chrome-only dark UI while the
-  **map** is still in day mode). The map's own day/night is **not** here — that is `MapDoc.darkMode`
-  (a stale `darkMode` key in an existing persisted blob is ignored); `darkUiInDay` is orthogonal
-  to it, so `App` drives `data-theme` off `chromeDark = darkMode || darkUiInDay`. **Persisted** as
+  `canvasColor: CanvasColor` (the `CANVAS_COLORS` ladder `'auto'|'light'|'gray'|'dark'`, default
+  auto — the **paper** alone: auto is the map mode's own paper, the rest pin it, dimming glare
+  without touching the map) and `interfaceTheme: InterfaceTheme` (the `INTERFACE_THEMES` ladder
+  `'auto'|'light'|'dark'`, default auto — how the **chrome** alone is themed: auto follows the
+  map, light/dark pin it). The map's own day/night is **not** here — that is `MapDoc.darkMode` (a
+  stale `darkMode` key in an existing persisted blob is ignored); both preferences are orthogonal
+  to it, so `App` drives `data-theme` off `chromeIsDark(interfaceTheme, darkMode)` and `theme.ts`
+  resolves the paper from `(darkMode, canvasColor)`. **Persisted** as
   `'massimo-viewport'` (per-browser, **not** per-file) — except `showNetwork`, alone among the
   visibility flags, which `partialize` deliberately omits so a reload never opens onto an
   apparently-empty map. It is the broad one; the narrow toggles each clear a single kind, so a
   reload under them still shows a recognisable map. The store's `merge` hook is zustand's own
-  shallow one plus a gate on `dayCanvasColor`, the only stored UNION here: a paper the ladder no
-  longer offers heals to the default rather than sitting in the store for good, since no Map-menu
-  row names it and nothing but a rehydrate can write it (the flags and numbers beside it need no
-  gate — each is read as truthy or run through a ladder lookup that already falls back, see
-  `nextGridSize`). The giant SVG tree subscribes here and is re-rendered only on commit.
+  shallow one plus a gate on `canvasColor` and `interfaceTheme`, the two stored UNIONS here: a
+  rung the ladder no longer offers heals to the default rather than sitting in the store for good,
+  since no Map-menu row names it and nothing but a rehydrate can write it (the flags and numbers
+  beside them need no gate — each is read as truthy or run through a ladder lookup that already
+  falls back, see `nextGridSize`). The giant SVG tree subscribes here and is re-rendered only on
+  commit.
 - `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`), plus
   `panning` (is a pan armed). **Not persisted, not undoable.** Only a small set of overlays
   subscribes — the selected-item handle overlays (`PolygonView`, `SvgImageView`) via the
@@ -2583,8 +2585,10 @@ Six seams cover it, and a seventh rule governs anything new:
 
 ### Preferences
 
-- [theme.ts](src/state/theme.ts) — `themeColors(darkMode, dayCanvasColor = 'white'): ThemeColors`
-  (pure table; in day mode `dayCanvasColor` picks the `DAY_PAPER` white/gray/black paper variant):
+- [theme.ts](src/state/theme.ts) — `themeColors(darkMode, canvasColor = 'auto'): ThemeColors`
+  (pure table; `canvasColor` picks the light/gray/dark paper variant from the mode's own
+  `DAY_PAPER` / `NIGHT_PAPER` table, auto being the mode's own paper — only the paper and its grid
+  move, the mode's ink stays):
   `canvasBg, label, selectionStroke, grid, underlay, editorBg, editorText, phantomDot`, plus the
   interaction accent `accent`/`accentWash` — marquee, snap guides, selection washes, mode frames —
   and the line-edit dim `dim`/`dimOpacity`/`dimmedLabel`; light `#fafafa`, dark `#000000`).
@@ -2592,10 +2596,11 @@ Six seams cover it, and a seventh rule governs anything new:
   and so is themed in CSS — today only the guide wells. `MapCanvas` stamps it on the host as
   `data-paper="dark"` (beside the background it already sets from `canvasBg`) and the well rules
   key off that, because they cannot use the chrome's `data-theme`: chrome and paper disagree in
-  both directions — **Dark UI in day** darkens the toolbar over a light map, and the gray/black day
-  papers darken the map under a light toolbar. Dimmed day papers therefore set it, alongside their
-  grid override. It does not mean "use the night palette": the SVG ink on a dimmed paper stays day
-  by design, so `accent`, `alignGuide` and `phantomDot` are day values over a gray or black canvas.
+  both directions — a **Dark** chrome darkens the toolbar over a light map, and a gray or dark
+  paper darkens the map under a light toolbar. It follows the paper, not the mode: a gray or dark
+  paper sets it and a light one clears it, whichever mode pinned it. It does not mean "use the
+  night palette": the SVG ink on a pinned paper stays the mode's own by design, so `accent`,
+  `alignGuide` and `phantomDot` are day values over a gray or black day canvas.
   **No store of its own** — `useThemeColors()` reads `darkMode` off the **doc**, so loading a
   night map paints night with no extra wiring (unlike the camera, which needs an explicit
   `fitCameraToDoc`). Theming is split by what can
@@ -4021,8 +4026,9 @@ the two keys is a stale picture on one side or a stale arrangement on the other.
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
   dark-mode toggles, the **View menu** (`ViewPopover` — the eye button; see Viewport), the
   layering-mode button, Reset view, and the sidebar toggle. The Map menu also carries the two
-  local chrome preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
-  (white/gray/black paper) — which live in `useViewportStore`, not the doc.
+  local viewing preferences — the **Interface theme** submenu (auto / light / dark chrome) and the
+  **Canvas color** submenu (auto / light / gray / dark paper), both pick-one radio groups — which
+  live in `useViewportStore`, not the doc.
   Its leftmost element is the **`BrandBadge`** wordmark — the app name drawn as an "M" route
   bullet (`BrandBullet.tsx`) rather than text; alt-click knocks it loose into the easter egg (see
   `BouncingBullet`). Also embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`,
@@ -4687,7 +4693,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   for a stored value, the store's own module for a union that never leaves the app (`MAP_SORTS` in
   `state/mapLibrary.ts`): an ordered array naming every member — `LINE_STYLES`, `LINE_END_STYLES`,
   `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
-  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, `DAY_CANVAS_COLORS`, `SIDEBAR_TABS`,
+  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, `CANVAS_COLORS`, `INTERFACE_THEMES`,
+  `SIDEBAR_TABS`,
   `ALL_SNAPS`/`GRID_SNAPS` (the two directional snap cycles, in `geometry/snap.ts` rather than
   beside the toolbar that spells their icons, because the store that judges a stored one sits
   below the components), `LABEL_ALIGNS`,
@@ -4699,7 +4706,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   `LABEL_WEIGHT_NAMES` (whose rungs carry their display names, since the names ARE the shipped
   faces) — with a membership guard beside it: `isLineEndStyle`, `isTransferDrawOrder`,
   `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`,
-  `isMapSort`, `isDayCanvasColor`, `isSidebarTab`, `isAllSnap`, `isGridSnap`, `isLabelAlign`,
+  `isMapSort`, `isCanvasColor`, `isInterfaceTheme`, `isSidebarTab`, `isAllSnap`, `isGridSnap`,
+  `isLabelAlign`,
   `isLabelValign`, `isAutoHAlign`, `isAutoVAlign`, `isLabelWeight`, `isStationStopType`.
   `STATION_STOP_TYPES` is the ladder with a rung the STORED field can never hold: `auto` is what
   an absent `stopType` spells, so the load gate judges by `isStoredStopType` — the ladder minus
@@ -4723,7 +4731,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   keeps the live value, since a blob predating the field violates nothing. It belongs in a
   `merge` hook and never in `migrate`, which zustand runs only when the stored version differs
   from the configured one — so a gate placed there would never see a blob the current build
-  wrote. Six fields go through it: `viewportStore`'s `dayCanvasColor` (`isDayCanvasColor`),
+  wrote. Seven fields go through it: `viewportStore`'s `canvasColor` (`isCanvasColor`) and
+  `interfaceTheme` (`isInterfaceTheme`),
   `libraryPrefs`' `sort` (`isMapSort`), `customPalettes`' `sort` (`isPaletteSort`), the sidebar's
   `activeTab` (`isSidebarTab`) and `snapPrefs`' two directional modes, `all` and `grid`
   (`isAllSnap`/`isGridSnap`). The flags and numbers beside them need none, being read as booleans
@@ -4744,7 +4753,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   chip or label map where the pickers need one
   (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
   `TEXT_LABEL_ALIGN_CHIPS`, `LabelAlignButtons`'s four chip maps, each dialog's `SORT_LABELS`,
-  the Map menu's `DAY_CANVAS_COLOR_LABELS`, the sidebar strip's `TAB_LABELS` and its
+  the Map menu's `CANVAS_COLOR_LABELS` and `INTERFACE_THEME_LABELS`, the sidebar strip's
+  `TAB_LABELS` and its
   `tabCounts` sibling, the station inspector's `STOP_TYPE_LABELS`) or
   `LINE_STYLE_TIE_RANK` — a member added
   to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind

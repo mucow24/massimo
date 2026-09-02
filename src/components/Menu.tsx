@@ -78,34 +78,52 @@ export function MenuItem({ onClick, children, disabled, shortcut }: MenuItemProp
   );
 }
 
-interface MenuCheckboxItemProps {
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
+interface MenuRadioGroupProps<T extends string> {
+  value: T;
+  onValueChange: (value: T) => void;
   children: ReactNode;
 }
 
 /**
- * A checkable menu row — a `menu-item` with a leading check column that fills in
- * when `checked`. Radix `CheckboxItem` supplies the toggle behavior and the
- * `role="menuitemcheckbox"` semantics; the check itself lives in an
- * `ItemIndicator`, which renders its child only in the checked state (the fixed
- * `menu-check` width reserves the gutter so the label never shifts). Selecting it
- * closes the menu like any other item — one toggle, immediate feedback, done.
+ * A pick-one set of `<MenuRadioItem>` rows (Radix `RadioGroup`): exactly one
+ * row — the one whose `value` matches — shows its check. Typed on the value
+ * union so a ladder's rows and the store's setter agree at compile time.
  */
-export function MenuCheckboxItem({ checked, onCheckedChange, children }: MenuCheckboxItemProps) {
+export function MenuRadioGroup<T extends string>({
+  value,
+  onValueChange,
+  children,
+}: MenuRadioGroupProps<T>) {
   return (
-    <Dropdown.CheckboxItem
-      className="menu-item menu-checkbox-item"
-      checked={checked}
-      onCheckedChange={onCheckedChange}
-    >
+    <Dropdown.RadioGroup value={value} onValueChange={(v) => onValueChange(v as T)}>
+      {children}
+    </Dropdown.RadioGroup>
+  );
+}
+
+interface MenuRadioItemProps {
+  value: string;
+  children: ReactNode;
+}
+
+/**
+ * One row of a `<MenuRadioGroup>` — a `menu-item` with a leading check column
+ * that fills in when it is the group's current value. Radix `RadioItem` supplies
+ * the `role="menuitemradio"` semantics; the check lives in an `ItemIndicator`,
+ * which renders its child only in the checked state (the fixed `menu-check`
+ * width reserves the gutter so every row's label sits at the same x). Picking a
+ * row closes the menu like any other item.
+ */
+export function MenuRadioItem({ value, children }: MenuRadioItemProps) {
+  return (
+    <Dropdown.RadioItem className="menu-item menu-radio-item" value={value}>
       <span className="menu-check" aria-hidden="true">
         <Dropdown.ItemIndicator>
           <CheckIcon />
         </Dropdown.ItemIndicator>
       </span>
       {children}
-    </Dropdown.CheckboxItem>
+    </Dropdown.RadioItem>
   );
 }
 

@@ -11,8 +11,10 @@ import type { MapDoc } from '../model/types';
 import {
   useViewportStore,
   nextGridSize,
-  DAY_CANVAS_COLORS,
-  type DayCanvasColor,
+  CANVAS_COLORS,
+  INTERFACE_THEMES,
+  type CanvasColor,
+  type InterfaceTheme,
 } from '../state/viewportStore';
 import { exportVisibilityOverrides } from '../state/visibility';
 import { parse, serialize } from '../model/serialize';
@@ -49,7 +51,7 @@ import {
 } from '../state/saveBaseline';
 import { useLibraryPointer } from '../state/libraryPointer';
 import { MapLibraryDialog } from './MapLibraryDialog';
-import { Menu, MenuCheckboxItem, MenuItem, MenuSeparator, SubMenu } from './Menu';
+import { Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, SubMenu } from './Menu';
 import {
   CursorArrowIcon,
   DoubleArrowLeftIcon,
@@ -131,13 +133,21 @@ function ToolButtons() {
   );
 }
 
-// Menu wording for the day-paper ladder. A `Record` so a paper added to
-// DAY_CANVAS_COLORS fails to compile until it is named here, and the submenu
-// below reads its rows straight off the ladder rather than re-spelling them.
-const DAY_CANVAS_COLOR_LABELS: Record<DayCanvasColor, string> = {
-  white: 'White',
+// Menu wording for the paper ladder. A `Record` so a paper added to
+// CANVAS_COLORS fails to compile until it is named here, and the submenu below
+// reads its rows straight off the ladder rather than re-spelling them.
+const CANVAS_COLOR_LABELS: Record<CanvasColor, string> = {
+  auto: 'Auto (follows map mode)',
+  light: 'Light',
   gray: 'Gray',
-  black: 'Black',
+  dark: 'Dark',
+};
+
+// Same deal for the chrome-theme ladder (INTERFACE_THEMES).
+const INTERFACE_THEME_LABELS: Record<InterfaceTheme, string> = {
+  auto: 'Auto (follows map)',
+  light: 'Light',
+  dark: 'Dark',
 };
 
 export function Toolbar() {
@@ -149,9 +159,10 @@ export function Toolbar() {
   const setGridSize = useViewportStore((s) => s.setGridSize);
   const darkMode = useDoc((s) => s.darkMode);
   const setDarkMode = useDoc((s) => s.setDarkMode);
-  const setDayCanvasColor = useViewportStore((s) => s.setDayCanvasColor);
-  const darkUiInDay = useViewportStore((s) => s.darkUiInDay);
-  const setDarkUiInDay = useViewportStore((s) => s.setDarkUiInDay);
+  const canvasColor = useViewportStore((s) => s.canvasColor);
+  const setCanvasColor = useViewportStore((s) => s.setCanvasColor);
+  const interfaceTheme = useViewportStore((s) => s.interfaceTheme);
+  const setInterfaceTheme = useViewportStore((s) => s.setInterfaceTheme);
   const clearAll = useDoc((s) => s.clearAll);
   const selection = useSelection();
 
@@ -730,20 +741,30 @@ export function Toolbar() {
           <MenuItem onClick={onExportJson}>JSON</MenuItem>
         </SubMenu>
         <MenuSeparator />
-        {/* Local viewing preference: darken only the chrome, leaving the map a
-            day map. Distinct from the moon toggle's night mode (which repaints
-            the canvas and saves to the doc). Persisted, never touches the doc. */}
-        <MenuCheckboxItem checked={darkUiInDay} onCheckedChange={setDarkUiInDay}>
-          Dark UI in day
-        </MenuCheckboxItem>
-        {/* Local viewing preference: dim the day-mode paper to cut glare
-            without switching to night mode. Persisted, never touches the doc. */}
-        <SubMenu label="Day canvas color">
-          {DAY_CANVAS_COLORS.map((color) => (
-            <MenuItem key={color} onClick={() => setDayCanvasColor(color)}>
-              {DAY_CANVAS_COLOR_LABELS[color]}
-            </MenuItem>
-          ))}
+        {/* Local viewing preference: theme the chrome alone — follow the map,
+            or pin it light/dark regardless. Distinct from the moon toggle's
+            night mode (which repaints the canvas and saves to the doc).
+            Persisted, never touches the doc. */}
+        <SubMenu label="Interface theme">
+          <MenuRadioGroup value={interfaceTheme} onValueChange={setInterfaceTheme}>
+            {INTERFACE_THEMES.map((theme) => (
+              <MenuRadioItem key={theme} value={theme}>
+                {INTERFACE_THEME_LABELS[theme]}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </SubMenu>
+        {/* Local viewing preference: pin the paper (e.g. dim a day map to cut
+            glare) without switching the map's mode. Persisted, never touches
+            the doc. */}
+        <SubMenu label="Canvas color">
+          <MenuRadioGroup value={canvasColor} onValueChange={setCanvasColor}>
+            {CANVAS_COLORS.map((color) => (
+              <MenuRadioItem key={color} value={color}>
+                {CANVAS_COLOR_LABELS[color]}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
         </SubMenu>
         <MenuItem onClick={onClear}>Clear</MenuItem>
       </Menu>
