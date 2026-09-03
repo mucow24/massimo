@@ -342,6 +342,25 @@ export function flushDocPersist(): void {
   writePendingPersist();
 }
 
+/**
+ * Write the live doc to its map's slot NOW — the same bytes persist would
+ * write on the next edit. For a document that has just changed identity
+ * (mapTab's retargetTab): a clean doc has no slot (markSaved released it),
+ * and the new identity has no library row to boot from, so without this a
+ * reload would come up empty.
+ */
+export function writeDocDraftNow(): void {
+  cancelPersistTimer();
+  pendingPersist = {
+    key: docKey(tabMapId()),
+    value: {
+      state: pickDocSnapshot(useDoc.getState()),
+      version: useDoc.persist.getOptions().version ?? 0,
+    },
+  };
+  writePendingPersist();
+}
+
 // Close the debounce window when the tab goes away or to the background.
 // localStorage is synchronous, so writing inside these handlers is reliable.
 // `pagehide` covers unload AND bfcache navigations; `beforeunload` is belt and

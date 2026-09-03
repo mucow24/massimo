@@ -40,7 +40,7 @@ import { pickDocSnapshot, useDoc } from '../state/store';
 import { serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { chooseOption } from '../test/interaction';
-import { docKey, hasDocDraft } from '../state/mapKeys';
+import { baselineKey, cameraKey, docKey, hasDocDraft, pointerKey } from '../state/mapKeys';
 
 const MAPS: MapSummary[] = [
   {
@@ -94,9 +94,12 @@ const M2_V9: VersionMeta = {
 
 const onClose = vi.fn();
 const onOpenVersion = vi.fn(async () => {});
+const onOpenDraft = vi.fn(async () => {});
 
 const renderDialog = () =>
-  render(<MapLibraryDialog onClose={onClose} onOpenVersion={onOpenVersion} />);
+  render(
+    <MapLibraryDialog onClose={onClose} onOpenVersion={onOpenVersion} onOpenDraft={onOpenDraft} />,
+  );
 
 /** Vouch for the live doc as saved, so "the baseline survived" and "the
  *  baseline was wiped" are distinguishable outcomes below. */
@@ -141,6 +144,7 @@ beforeEach(() => {
   vi.mocked(setMapStarred).mockReset().mockResolvedValue(undefined);
   onClose.mockClear();
   onOpenVersion.mockClear();
+  onOpenDraft.mockClear();
   useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
 });
 
@@ -234,6 +238,72 @@ describe('MapLibraryDialog', () => {
     expect(window.location.hash).toBe(`#map=${mapId}`);
     expect(hasDocDraft('m1')).toBe(false);
     expect(JSON.parse(localStorage.getItem(docKey(mapId))!).state.name).toBe('Live doc');
+  });
+
+  it('deleting a map sweeps its per-map slots — a working copy is not left as an orphan', async () => {
+    const user = userEvent.setup();
+    for (const key of [docKey, baselineKey, cameraKey, pointerKey])
+      localStorage.setItem(key('m1'), '{}');
+    renderDialog();
+    await screen.findByText('Canal Line');
+    await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    await waitFor(() => expect(deleteMap).toHaveBeenCalledWith('m1'));
+    for (const key of [docKey, baselineKey, cameraKey, pointerKey]) {
+      expect(localStorage.getItem(key('m1'))).toBeNull();
+    }
+  });
+
+  it('deleting the live map sweeps the old identity’s slots but keeps the moved doc', async () => {
+    const user = userEvent.setup();
+    useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    useDoc.getState().setDocName('Live doc');
+    localStorage.setItem(baselineKey('m1'), '{}');
+    renderDialog();
+    await screen.findByText('Canal Line');
+    await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    await waitFor(() => expect(useLibraryPointer.getState().mapId).not.toBe('m1'));
+    expect(localStorage.getItem(baselineKey('m1'))).toBeNull();
+    expect(localStorage.getItem(pointerKey('m1'))).toBeNull();
+    expect(hasDocDraft(useLibraryPointer.getState().mapId)).toBe(true);
+  });
+
+  /**
+   * A New drawn and then closed on has a working copy under a map id that no
+   * library row names. Nothing else can reach it — a bare boot mints another
+   * map — so the dialog lists it.
+   */
+  it('lists a working copy whose map has no library row, and opens it through the caller', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(docKey('ghost'), '{"state":{"name":"Drawn last night"},"version":30}');
+    renderDialog();
+    await screen.findByText('Canal Line');
+    const row = [...document.querySelectorAll('.map-row')].find((r) =>
+      r.textContent?.includes('Drawn last night'),
+    )!;
+    expect(row).toHaveTextContent('unsaved draft');
+    expect(row.querySelector('.map-row-link')).toHaveAttribute('href', '#map=ghost');
+    await user.click(screen.getByRole('button', { name: 'Open draft Drawn last night' }));
+    await waitFor(() => expect(onOpenDraft).toHaveBeenCalledWith('ghost'));
+  });
+
+  it('does not list the tab’s own map as a draft — it is already on the canvas', async () => {
+    useDoc.getState().setDocName('Being drawn'); // writes tab-map's working copy; no row for it
+    renderDialog();
+    await screen.findByText('Canal Line');
+    expect(screen.queryByText('unsaved draft')).toBeNull();
+    expect(screen.queryByText('Being drawn')).toBeNull();
+  });
+
+  it('shows a failed draft open inside the dialog', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(docKey('ghost'), '{"state":{"name":"Ghost"},"version":30}');
+    onOpenDraft.mockRejectedValue(new Error('That map is open in another window.'));
+    renderDialog();
+    await screen.findByText('Canal Line');
+    await user.click(screen.getByRole('button', { name: 'Open draft Ghost' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('another window');
   });
 
   it('links each map to its own URL, for a new tab', async () => {

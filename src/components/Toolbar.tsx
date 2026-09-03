@@ -570,6 +570,17 @@ export function Toolbar() {
     setLibraryOpen(false);
   };
 
+  /**
+   * Open a working copy whose map has no library row — a New drawn and then
+   * closed on. Nothing but the dialog's draft list can reach it. Throws for
+   * the dialog to show, like onOpenVersion.
+   */
+  const onOpenDraft = async (mapId: string) => {
+    await autoSaveCurrent();
+    await switchTabToMap(mapId);
+    setLibraryOpen(false);
+  };
+
   // Export the rendered map as an image. All three share the canvas snapshot,
   // the active theme's background, and the name-stamped basename; failures
   // surface as a status toast.
@@ -875,7 +886,11 @@ export function Toolbar() {
         {selection.sidebarOpen ? <DoubleArrowRightIcon /> : <DoubleArrowLeftIcon />}
       </button>
       {libraryOpen && (
-        <MapLibraryDialog onClose={() => setLibraryOpen(false)} onOpenVersion={onOpenVersion} />
+        <MapLibraryDialog
+          onClose={() => setLibraryOpen(false)}
+          onOpenVersion={onOpenVersion}
+          onOpenDraft={onOpenDraft}
+        />
       )}
       {palettesOpen && <PalettesDialog onClose={() => setPalettesOpen(false)} />}
     </div>

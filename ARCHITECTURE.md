@@ -2139,17 +2139,25 @@ save wrote A's bytes into B's history.)
   outgoing map's unless it reads dirty. So the slots in use are bounded by unsaved work rather than
   by how many maps this browser has opened (one map alone can be 5 MB against an origin quota of
   5–10 MB); the library dialog marks a map that has one "unsaved changes"; and a map with none
-  boots from the library — `openTabMapFromLibrary`, run from the toolbar's mount effect: the
-  pointer's version if it names one, else the newest, the canvas empty while the read is out.
+  boots from the library — `openTabMapFromLibrary`, run from the toolbar's mount effect (single-
+  flight per map, since StrictMode runs the effect twice): the pointer's version if it names one,
+  else the newest, the canvas empty while the read is out — and an edit that lands while the read
+  is out wins, since it wrote a working copy. The invariant the other way: a live doc that is not
+  `clean` always HAS a working copy. `retargetTab` writes one for the doc it carries
+  (`writeDocDraftNow`), because a clean doc's slot was released and its new identity has no library
+  row to boot from. A copy whose map has **no row** — a New drawn and closed on — is reachable from
+  nowhere else, so the dialog lists it as an "unsaved draft" to open (`listDocDrafts`), and deleting
+  a map sweeps its slots (`removeMapKeys`) rather than orphaning them.
 - **One editing window per map.** A tab takes the map's Web Lock (`massimo-map:<id>`) before it
   mounts and on every switch; a second tab on the same URL gets a plain busy page from main.tsx
   and reloads into the editor when the first lets go (`whenMapLockFree`). Opening a version of a
   map another window holds rejects with `MAP_BUSY`, for the dialog to show. jsdom has no API and
   runs unlocked.
 - **Every change of WHICH map goes through mapTab.ts, in one order:** take the incoming lock,
-  drop the outgoing working copy, release the outgoing lock, move the pointer — and only THEN
-  write the document, because the adapters key by the pointer and the incoming doc's first write
-  must land in its own slot. `becomeMap` (New, a file, opening a version) is the plain switch;
+  flush any debounced doc write still pending for the outgoing map (its key was resolved when it
+  was queued, so landing later would put the slot back), drop the outgoing working copy, release
+  the outgoing lock, move the pointer — and only THEN write the document, because the adapters
+  key by the pointer and the incoming doc's first write must land in its own slot. `becomeMap` (New, a file, opening a version) is the plain switch;
   `retargetTab` is the same document under a new identity (Make a copy, and the dialog deleting
   the map under the live doc), moving the working copy and camera along; `switchTabToMap` becomes
   a map AND comes up on it — its working copy through the doc store's own hydrate path (migrate +

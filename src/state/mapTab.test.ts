@@ -110,6 +110,33 @@ describe('openTabMapFromLibrary — coming up on a map with no working copy', ()
     expect(stationCount(m)).toBe(0);
     expect(statusNow(m)).toBe('unsaved');
   });
+
+  it('runs once for concurrent callers — StrictMode mounts the toolbar twice', async () => {
+    const m1 = await boot();
+    m1.store.useDoc.getState().addStation(0, 0);
+    await save(m1);
+    const m2 = await boot();
+    const first = m2.tab.openTabMapFromLibrary();
+    const second = m2.tab.openTabMapFromLibrary();
+    expect(second).toBe(first);
+    await first;
+    expect(stationCount(m2)).toBe(1);
+    // Settled and released: a later call (another map, say) is a fresh read.
+    expect(m2.tab.openTabMapFromLibrary()).not.toBe(first);
+  });
+
+  it('keeps an edit that landed while the library read was out', async () => {
+    const m1 = await boot();
+    m1.store.useDoc.getState().addStation(0, 0);
+    await save(m1);
+    const m2 = await boot();
+    const read = m2.tab.openTabMapFromLibrary();
+    m2.store.useDoc.getState().addStation(100, 0); // the user got there first
+    await read;
+    const stations = Object.values(m2.store.useDoc.getState().stations);
+    expect(stations.map((s) => s.x)).toEqual([100]);
+    expect(statusNow(m2)).toBe('dirty');
+  });
 });
 
 describe('switchTabToMap — becoming another map and coming up on it', () => {
@@ -172,6 +199,20 @@ describe('becomeMap — the outgoing map’s working copy', () => {
     expect(m.keys.hasDocDraft('a')).toBe(true);
   });
 
+  it('flushes a pending debounced write before deciding, so it cannot resurrect the slot', async () => {
+    const m = await boot();
+    // A drag-style group defers the storage write; the edit is then vouched
+    // for (clean) while the write is still queued against map a's key.
+    const group = m.store.beginHistoryGroup({ deferPersist: true });
+    m.store.useDoc.getState().setDocName('Mid-gesture');
+    const snap = m.store.pickDocSnapshot(m.store.useDoc.getState());
+    m.sb.markSaved(m.ser.serialize(snap), snap);
+    await m.tab.becomeMap('b');
+    group.commit();
+    m.tab.adoptParsedDoc({ ...m.store.useDoc.getState() }, false); // clearHistory flushes
+    expect(m.keys.hasDocDraft('a')).toBe(false);
+  });
+
   it('moves the pointer to the version the target’s own slot records', async () => {
     const m1 = await boot();
     m1.store.useDoc.getState().addStation(0, 0);
@@ -225,6 +266,29 @@ describe('retargetTab — the same document under a new identity', () => {
     expect(window.location.hash).toBe('#map=c');
     // The canvas never blinked.
     expect(stationCount(m)).toBe(1);
+  });
+
+  /**
+   * A clean doc has no working copy (the save released it), and the new
+   * identity has no library row. Without a copy written under it, the next
+   * reload boots an empty map — the document is gone. Delete-the-live-map is
+   * exactly this shape.
+   */
+  it('writes the doc under the new identity even when the old one had no working copy', async () => {
+    const m = await boot();
+    m.store.useDoc.getState().addStation(0, 0);
+    await save(m);
+    expect(m.keys.hasDocDraft('a')).toBe(false);
+    await m.tab.retargetTab('c');
+    expect(m.keys.hasDocDraft('c')).toBe(true);
+    expect(
+      Object.keys(JSON.parse(localStorage.getItem(m.keys.docKey('c'))!).state.stations),
+    ).toHaveLength(1);
+
+    // And a reload on c comes back to it.
+    const again = await boot();
+    expect(again.lp.useLibraryPointer.getState().mapId).toBe('c');
+    expect(stationCount(again)).toBe(1);
   });
 });
 

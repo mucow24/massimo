@@ -41,6 +41,38 @@ export const hasDocDraft = (mapId: string): boolean => localStorage.getItem(docK
 
 export const removeDocDraft = (mapId: string): void => localStorage.removeItem(docKey(mapId));
 
+/** Every map with a working copy in this browser. The library dialog crosses
+ *  this with its rows: a copy whose map has no row — a New drawn and closed on
+ *  — is reachable from nowhere else. */
+export function listDocDrafts(): string[] {
+  const ids: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(DOC)) ids.push(key.slice(DOC.length));
+  }
+  return ids;
+}
+
+/** The name inside a working copy, for a row that has no library row to
+ *  read one from. */
+export function readDocDraftName(mapId: string): string | null {
+  const raw = localStorage.getItem(docKey(mapId));
+  if (raw === null) return null;
+  try {
+    const name = (JSON.parse(raw) as { state?: { name?: unknown } }).state?.name;
+    return typeof name === 'string' ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A map deleted from the library takes its slots with it — a working copy
+ *  left behind would be a multi-MB orphan nothing lists. */
+export function removeMapKeys(mapId: string): void {
+  for (const key of [docKey, baselineKey, cameraKey, pointerKey])
+    localStorage.removeItem(key(mapId));
+}
+
 /**
  * The same document under a new identity: the working copy and the camera
  * travel with it. The library-facing records (pointer version, baseline) do

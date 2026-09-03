@@ -25,13 +25,21 @@ import { useLibraryPrefs } from '../state/libraryPrefs';
 import { markUnbacked } from '../state/saveBaseline';
 import { useDoc } from '../state/store';
 import { retargetTab } from '../state/mapTab';
-import { hasDocDraft, mapUrl } from '../state/mapKeys';
+import {
+  hasDocDraft,
+  listDocDrafts,
+  mapUrl,
+  readDocDraftName,
+  removeMapKeys,
+} from '../state/mapKeys';
 import { DialogSortSelect } from './dialogRow';
 
 interface Props {
   onClose: () => void;
   /** Adopt a version over the live doc. Rejects with a message worth showing. */
   onOpenVersion: (version: VersionMeta) => Promise<void>;
+  /** Become a map that has a working copy but no library row. Same contract. */
+  onOpenDraft: (mapId: string) => Promise<void>;
 }
 
 const when = (ms: number) =>
@@ -204,7 +212,7 @@ function RenameField({
  * flips to "Sure?" in place. Not a modal on a modal — there is no confirmation
  * dialog anywhere in this app.
  */
-export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
+export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props) {
   // null means "still loading" — distinct from [], which means "no maps yet".
   // Collapsing the two flashes "No saved maps" on every open.
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
@@ -319,6 +327,10 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
       await retargetTab(newMapId());
       markUnbacked();
     }
+    // The map's slots go with its rows (after the retarget above has moved
+    // the live doc's out of the way): a working copy left behind would be a
+    // multi-MB orphan that nothing lists.
+    removeMapKeys(id);
     if (selectedMapId === id) {
       setSelectedMapId(null);
       setVersions(null);
@@ -410,6 +422,25 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
     }
   };
 
+  const onOpenDraftRow = async (mapId: string) => {
+    setError(null);
+    try {
+      await onOpenDraft(mapId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open that draft.');
+    }
+  };
+
+  // Working copies whose map has no library row — a New drawn and closed on
+  // before its first save. Reachable from nowhere else, so they are listed
+  // here. The tab's own map is left out: with no row it is a New in progress,
+  // and it is already on the canvas.
+  const currentMapId = useLibraryPointer((s) => s.mapId);
+  const orphanDrafts =
+    maps === null
+      ? []
+      : listDocDrafts().filter((id) => id !== currentMapId && !maps.some((m) => m.id === id));
+
   const deleteButton = (key: string, label: string, run: () => void) =>
     confirmKey === key ? (
       <button type="button" className="danger" onClick={run}>
@@ -489,7 +520,41 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                 </div>
                 <div className="dialog-list">
                   {visibleMaps === null && <div className="empty">Loading…</div>}
-                  {visibleMaps?.length === 0 && (
+                  {orphanDrafts.map((id) => {
+                    const name = readDocDraftName(id) ?? 'Untitled map';
+                    return (
+                      <div key={id} className="dialog-row map-row map-row-orphan">
+                        <span className="map-thumb map-thumb-blank" aria-hidden="true" />
+                        <div className="dialog-row-body">
+                          <strong>{name}</strong>
+                          <span className="dialog-row-meta">
+                            <span className="map-row-draft">unsaved draft</span> · not in the
+                            library yet
+                          </span>
+                        </div>
+                        <div className="dialog-row-actions">
+                          <a
+                            className="map-row-link"
+                            href={mapUrl(id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Open ${name} in a new tab`}
+                            title="Open in a new tab"
+                          >
+                            <ExternalLinkIcon />
+                          </a>
+                          <button
+                            type="button"
+                            aria-label={`Open draft ${name}`}
+                            onClick={() => void onOpenDraftRow(id)}
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {visibleMaps?.length === 0 && orphanDrafts.length === 0 && (
                     <div className="empty">
                       {starredMapsOnly ? 'No starred maps.' : 'No saved maps yet.'}
                     </div>

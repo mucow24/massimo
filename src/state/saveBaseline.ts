@@ -217,7 +217,7 @@ async function recoverBaselineFromLibrary(): Promise<void> {
   }
   if (recorded.backed !== true) return;
   const { mapId, version } = useLibraryPointer.getState();
-  if (mapId === null || version === null) return;
+  if (version === null) return;
 
   // Best-effort IO: a storage failure declines, same as a missing row.
   let payload: string | undefined;

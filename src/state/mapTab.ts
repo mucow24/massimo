@@ -3,7 +3,7 @@ import { parse, serialize } from '../model/serialize';
 import { computeContentBounds } from '../geometry/contentBounds';
 import { fitViewport } from '../components/canvas/viewportMath';
 import { getCanvasSvg } from '../export/exportCanvas';
-import { pickDocSnapshot, useDoc, useSelection } from './store';
+import { flushDocPersist, pickDocSnapshot, useDoc, useSelection, writeDocDraftNow } from './store';
 import { clearHistory } from './history';
 import { useViewportStore } from './viewportStore';
 import { useCustomPalettes } from './customPalettes';
@@ -116,11 +116,16 @@ export function adoptParsedDoc(doc: MapDoc, backed: boolean): void {
  * time a switch reaches here the caller has auto-saved the outgoing doc (or
  * found nothing to save), so the slot holds either bytes the library has or
  * an untouched file/New — neither is work the slot exists for (mapKeys.ts).
+ * A debounced write still pending for the outgoing map is flushed FIRST: its
+ * key was resolved when it was queued, so landing later (the incoming doc's
+ * clearHistory flushes) would put the outgoing slot back after this removed
+ * it.
  */
 export async function becomeMap(mapId: string): Promise<void> {
   const from = tabMapId();
   if (mapId === from) return;
   if (!(await acquireMapLock(mapId))) throw new Error(MAP_BUSY);
+  flushDocPersist();
   if (saveStatusOf(useDoc.getState(), useSaveBaseline.getState()) !== 'dirty') removeDocDraft(from);
   releaseMapLock(from);
   useLibraryPointer.getState().setPointer(mapId, storedPointerVersion(mapId));
@@ -129,16 +134,21 @@ export async function becomeMap(mapId: string): Promise<void> {
 /**
  * The same document under a new identity — Make a copy, or the library row
  * under the live doc being deleted. The working copy and the camera come
- * along; the caller rewrites the pointer's version and the baseline, since
+ * along, and the doc is written under the new identity whether or not it had
+ * a slot under the old one: a clean doc's slot is released, and a new
+ * identity has no library row to boot from, so a reload would otherwise come
+ * up empty. The caller rewrites the pointer's version and the baseline, since
  * a new identity is exactly when their old values stop being true.
  */
 export async function retargetTab(mapId: string): Promise<void> {
   const from = tabMapId();
   if (mapId === from) return;
   if (!(await acquireMapLock(mapId))) throw new Error(MAP_BUSY);
+  flushDocPersist();
   moveDocKeys(from, mapId);
   releaseMapLock(from);
   useLibraryPointer.getState().setPointer(mapId, storedPointerVersion(mapId));
+  writeDocDraftNow();
 }
 
 /**
@@ -167,12 +177,28 @@ async function loadFromLibrary(mapId: string): Promise<{ doc: MapDoc; version: n
  *
  * Throws on a payload that will not parse, for the caller to show; a map the
  * library has nothing for stays the empty doc the boot gave it.
+ *
+ * Single-flight per map: StrictMode runs the mount effect twice in dev, and
+ * two reads would adopt twice. And an edit that lands while the read is out
+ * wins — it wrote a working copy, and the library version must not go over
+ * the only copy of it.
  */
-export async function openTabMapFromLibrary(): Promise<void> {
+let libraryBoot: { mapId: string; promise: Promise<void> } | null = null;
+export function openTabMapFromLibrary(): Promise<void> {
   const mapId = tabMapId();
+  if (libraryBoot?.mapId === mapId) return libraryBoot.promise;
+  const promise = bootFromLibrary(mapId).finally(() => {
+    if (libraryBoot?.promise === promise) libraryBoot = null;
+  });
+  libraryBoot = { mapId, promise };
+  return promise;
+}
+
+async function bootFromLibrary(mapId: string): Promise<void> {
   if (hasDocDraft(mapId)) return;
   const hit = await loadFromLibrary(mapId);
   if (tabMapId() !== mapId) return; // the tab moved on while the read was out
+  if (hasDocDraft(mapId)) return; // the user got there first
   if (hit === null) return;
   adoptParsedDoc(hit.doc, true);
   useLibraryPointer.getState().setPointer(mapId, hit.version);
