@@ -31,8 +31,9 @@ export interface RowDragState {
 
 /**
  * Drag-to-reorder for a fixed-height row list — the palette editor's swatch
- * rows. The house drag discipline, transplanted from the canvas hooks to DOM
- * rows: a press arms silently, `DRAG_MOVE_THRESHOLD` turns it into a drag,
+ * rows and the palettes dialog's map column, each passing its own CSS-pinned
+ * `rowHeight`. The house drag discipline, transplanted from the canvas hooks to
+ * DOM rows: a press arms silently, `DRAG_MOVE_THRESHOLD` turns it into a drag,
  * `pointerLost` / pointercancel / Escape abandon it, and the ONLY store write
  * is a single `onCommit(from, to)` at pointerup — the preview in between is
  * pure local state, so cancelling is free.

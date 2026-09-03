@@ -2,9 +2,9 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { InlineBullet } from './InlineBullet';
 import { useDoc } from '../state/store';
-import type { Line } from '../model/types';
-import { edgesFromStations } from '../model/lineTopology';
+import type { Line, LineId } from '../model/types';
 import { capCenterDy } from '../geometry/textMeasure';
+import { makeLine } from '../test/fixtures';
 
 const lineMap = (lines: Line[]): Map<string, Line> => {
   const m = new Map<string, Line>();
@@ -12,16 +12,7 @@ const lineMap = (lines: Line[]): Map<string, Line> => {
   return m;
 };
 
-const makeLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line => ({
-  id: overrides.id,
-  service: overrides.service,
-  name: overrides.name ?? overrides.service,
-  color: overrides.color ?? '#ff0000',
-  stations: overrides.stations ?? [],
-  edges: edgesFromStations(overrides.stations ?? []),
-});
-
-const redA1 = lineMap([makeLine({ id: 'l1', service: 'A1', color: '#ff0000' })]);
+const redA1 = lineMap([makeLine({ id: 'l1' as LineId, service: 'A1', color: '#ff0000' })]);
 
 afterEach(() => {
   useDoc.setState({ darkMode: false });

@@ -6,18 +6,17 @@ import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { RouteBullet } from '../model/types';
 import { capCenterDy } from '../geometry/textMeasure';
+import { makeRouteBullet } from '../test/fixtures';
 
 const noop = () => {};
 
-const makeBullet = (overrides: Partial<RouteBullet> & { id: string }): RouteBullet => ({
-  x: 0,
-  y: 0,
-  rotation: 0,
-  lineId: null,
-  shape: 'circle',
-  size: 14,
-  ...overrides,
-});
+// The shared fixture with this file's two house defaults on top, so a field
+// added to `RouteBullet` still arrives here from one place. Both departures are
+// deliberate: every mount below passes `lines={{}}`, so the bullet must name NO
+// line (the fixture's `l1` would not resolve), and the size is the one the
+// geometry assertions were written against.
+const makeBullet = (overrides: Partial<RouteBullet> & { id: string }): RouteBullet =>
+  makeRouteBullet({ lineId: null, size: 14, ...overrides });
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
