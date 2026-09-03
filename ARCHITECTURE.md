@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `fcebb00` (2026-09-02, #561) — verified against the live source.** This
+**Up to date as of commit `47946a2` (2026-09-02, #562) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -47,7 +47,7 @@ genuinely absent engine apart from a page that has outlived its build
      React components render the doc to SVG and dispatch actions.
 - **Editing = pure transforms.** Store actions are thin wrappers: `set((s) => T.moveStation(s, …))`.
   Transforms return the **same object reference on no-op** — this is load-bearing for undo
-  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~4200-line heart.)
+  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~5000-line heart.)
 - **The Vignelli look comes from "interlining"** ([src/geometry/interlining.ts](src/geometry/interlining.ts)):
   multiple lines sharing a station-pair corridor are merged into mean-centered parallel stripes.
   This is the single most intricate algorithm in the repo and is pinned by a **byte-exact golden
@@ -217,7 +217,9 @@ src/
                                 #   reveal that has no menu row of its own (no store)
     visibility.ts               # VISIBILITY_ITEMS registry: the View menu's layer toggles, which
                                 #   of them gate exported ink, which nest under the network,
-                                #   which modes reveal them, non-default detection
+                                #   which modes reveal them, non-default detection. Also
+                                #   `visibleSelectionKinds`: the kind→row pairing the
+                                #   selection-wide gestures share
     mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
     persistedUnion.ts           # healPersistedUnion: the gate a stored union field passes in a
                                 #   persist `merge` hook (member / non-member→default / absent→live)
@@ -2641,13 +2643,19 @@ Six seams cover it, and a seventh rule governs anything new:
   needs none is the locked-item deep-pick: `lockedHitsAt` probes geometry with no visibility
   opinion, but `lockedDispatchTarget` resolves through `document.querySelector`, so a hidden kind
   has no element and drops out before it can join the cycle.
-- **Gestures aimed at the SELECTION gate too, and they read no geometry at all.**
-  `unlockedSelectedItemIds` (selectionOps.ts) filters the selection for lock **and** visibility, so
-  every gesture reading it skips members on a switched-off layer: the Delete key, arrow-nudge,
-  Ctrl+X, the group tow (`collectGroupSiblings`) and the group panel's Delete all. Without it,
-  hiding Polygons and pressing Delete removed one with nothing on screen to show a selection ever
-  existed. The single-primary paths App owns take the same test by hand (a selected transfer, a
-  polygon's vertex handles), since they never reach the shared helper, and Ctrl+D reads
+- **Gestures aimed at the SELECTION gate too, and they read no geometry at all.** They cannot gate
+  by pool the way the marquee and the snappers do — there is no pool, only a selection — so they
+  gate kind by kind, off one table: `visibleSelectionKinds` (visibility.ts) resolves every
+  selectable kind's row in one pass, `stations` reading `showNetwork` straight because they nest
+  under the master switch and have no box of their own. `unlockedSelectedItemIds` (selectionOps.ts)
+  layers LOCK on top of it, so every gesture reading it skips members on a switched-off layer: the
+  Delete key, arrow-nudge, Ctrl+X and the group panel's Delete all. Without it, hiding Polygons and
+  pressing Delete removed one with nothing on screen to show a selection ever existed. The group
+  tow (`collectGroupSiblings`) reads the same table but keeps its own lock pass — it collects
+  START POSITIONS rather than ids, and it excludes the grabbed item — so the two halves share the
+  visibility answer by construction and `selectionOps.test.ts` pins the rest of the agreement. The
+  single-primary paths App owns take the same test by hand (a selected transfer, a polygon's
+  vertex handles), since they never reach the shared helper, and Ctrl+D reads
   `visibleCopyableSelection` — duplicating a hidden item would mint an invisible clone that
   selects itself, which the Delete gate then refuses to remove. Ctrl+C stays unfiltered: copying
   is a read. Skipping is deliberately SILENT: these gestures repeat under a held key, so a notice

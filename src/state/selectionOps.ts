@@ -2,8 +2,7 @@ import type { LockableKind } from '../model/transforms';
 import type { StationId } from '../model/types';
 import { isHistoryGrouping } from './history';
 import { beginHistoryGroup, getCopyableSelection, useDoc, useSelection } from './store';
-import { useViewportStore } from './viewportStore';
-import { kindVisibleNow, type VisibilityKey } from './visibility';
+import { visibleSelectionKinds, type SelectionKind } from './visibility';
 
 /**
  * The current selection's ids across every multi-selectable kind, one concrete
@@ -39,6 +38,14 @@ export type SelectionCoversLockable<
   T extends never = Exclude<LockableKind, keyof SelectionItemIds>,
 > = T;
 
+// The same pin against the VISIBILITY registry, and it runs the other way: a
+// kind added here but not there would read as permanently on screen, so a
+// hidden layer would answer Delete after all. `visibleSelectionKinds` returns a
+// complete record, so the reverse gap (a gate nothing selects) cannot hide.
+export type SelectionKindsAllGated<
+  T extends never = Exclude<keyof SelectionItemIds, SelectionKind>,
+> = T;
+
 /**
  * The selection an edit may actually act on: minus locked members, and minus
  * every kind the View menu is currently hiding.
@@ -54,46 +61,36 @@ export type SelectionCoversLockable<
  * notice per press would be noise, and the group popover already reports the
  * visible tally rather than the raw one.
  *
- * Through `kindVisibleNow` — the same entry point the marquee and the snap pools
- * use — so a kind its placing mode has revealed still counts as on screen.
- * Stations read `showNetwork` directly: they nest under it and have no row of
- * their own, exactly as `stationsForRectVisible` spells it.
+ * Through `visibleSelectionKinds` — the one kind-to-row table, which the drag
+ * tow reads too — so a kind its placing mode has revealed still counts as on
+ * screen, and the two halves cannot acquire different opinions about a layer.
  */
 export function unlockedSelectedItemIds(): SelectionItemIds {
   const doc = useDoc.getState();
   const sel = useSelection.getState();
-  const network = useViewportStore.getState().showNetwork;
-  const shown = (key: VisibilityKey, ids: string[]): string[] => (kindVisibleNow(key) ? ids : []);
+  const shows = visibleSelectionKinds();
   return {
-    stations: network ? sel.selectedStationIds.filter((id) => !doc.stations[id]?.locked) : [],
-    bullets: shown(
-      'showRouteBullets',
-      sel.selectedRouteBulletIds.filter((id) => !doc.routeBullets[id]?.locked),
-    ),
-    labels: shown(
-      'showTextLabels',
-      sel.selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked),
-    ),
-    polygons: shown(
-      'showPolygons',
-      sel.selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked),
-    ),
-    svgImages: shown(
-      'showSvgImages',
-      sel.selectedSvgImageIds.filter((id) => !doc.svgImages[id]?.locked),
-    ),
+    stations: shows.stations
+      ? sel.selectedStationIds.filter((id) => !doc.stations[id]?.locked)
+      : [],
+    bullets: shows.bullets
+      ? sel.selectedRouteBulletIds.filter((id) => !doc.routeBullets[id]?.locked)
+      : [],
+    labels: shows.labels ? sel.selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked) : [],
+    polygons: shows.polygons
+      ? sel.selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked)
+      : [],
+    svgImages: shows.svgImages
+      ? sel.selectedSvgImageIds.filter((id) => !doc.svgImages[id]?.locked)
+      : [],
     // No lock filter: anchors have none. Breaking the visual symmetry of the
     // lines above is the honest spelling — a `.filter(() => true)` would read
     // like a lock check that happens to pass. They do have visibility.
-    anchors: shown('showAnchors', sel.selectedAnchorIds),
-    lineCircles: shown(
-      'showLineCircles',
-      sel.selectedLineCircleIds.filter((id) => !doc.lineCircles[id]?.locked),
-    ),
-    guides: shown(
-      'showGuides',
-      sel.selectedGuideIds.filter((id) => !doc.guides[id]?.locked),
-    ),
+    anchors: shows.anchors ? sel.selectedAnchorIds : [],
+    lineCircles: shows.lineCircles
+      ? sel.selectedLineCircleIds.filter((id) => !doc.lineCircles[id]?.locked)
+      : [],
+    guides: shows.guides ? sel.selectedGuideIds.filter((id) => !doc.guides[id]?.locked) : [],
   };
 }
 
@@ -108,11 +105,12 @@ export function unlockedSelectedItemIds(): SelectionItemIds {
  */
 export function visibleCopyableSelection(): ReturnType<typeof getCopyableSelection> {
   const raw = getCopyableSelection(useSelection.getState());
+  const shows = visibleSelectionKinds();
   return {
-    bullets: kindVisibleNow('showRouteBullets') ? raw.bullets : [],
-    labels: kindVisibleNow('showTextLabels') ? raw.labels : [],
-    polygons: kindVisibleNow('showPolygons') ? raw.polygons : [],
-    svgImages: kindVisibleNow('showSvgImages') ? raw.svgImages : [],
+    bullets: shows.bullets ? raw.bullets : [],
+    labels: shows.labels ? raw.labels : [],
+    polygons: shows.polygons ? raw.polygons : [],
+    svgImages: shows.svgImages ? raw.svgImages : [],
   };
 }
 

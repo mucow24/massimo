@@ -53,8 +53,10 @@ import {
 import { dirname, join, resolve } from 'node:path';
 
 export const FONTS_DIR = join('public', 'fonts');
+// Only the NAME is shared: every reader joins it against a directory it was
+// handed (`stageInto`'s `fontsDir`, `countFaces`' `dir`), so a path pre-joined
+// against FONTS_DIR here would be the one spelling nobody can use.
 export const MARKER_NAME = '.substitute';
-export const SUBSTITUTE_MARKER = join(FONTS_DIR, MARKER_NAME);
 export const SUBSTITUTE_SOURCE = join(FONTS_DIR, 'DejaVuSans.ttf');
 export const FONT_TABLE_SOURCE = join('src', 'export', 'fonts.ts');
 export const PRIVATE_FONTS_REPO = 'mucow24/massimo-fonts';

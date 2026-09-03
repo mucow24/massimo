@@ -217,6 +217,52 @@ export function kindVisibleNow(key: VisibilityKey): boolean {
 }
 
 /**
+ * Which View-menu row gates each canvas-SELECTABLE kind, keyed the way a
+ * selection's id lists are keyed (`SelectionItemIds`, `GroupSiblings`).
+ *
+ * `stations` has no entry because it has no row of its own: it rides the master
+ * lines/stations switch, which {@link visibleSelectionKinds} reads directly.
+ */
+const SELECTION_VISIBILITY_KEYS = {
+  bullets: 'showRouteBullets',
+  labels: 'showTextLabels',
+  polygons: 'showPolygons',
+  svgImages: 'showSvgImages',
+  anchors: 'showAnchors',
+  lineCircles: 'showLineCircles',
+  guides: 'showGuides',
+} as const satisfies Record<string, VisibilityKey>;
+
+/** One canvas-selectable kind, named as the selection's id lists name it. */
+export type SelectionKind = 'stations' | keyof typeof SELECTION_VISIBILITY_KEYS;
+
+/**
+ * Every selectable kind's live on-screen gate, resolved in one pass.
+ *
+ * Gestures aimed at the SELECTION read no geometry, so they cannot gate by pool
+ * the way the marquee and the snappers do — there is no pool, only a selection,
+ * so they gate kind by kind. Two of them do (`unlockedSelectedItemIds`, the
+ * keyboard half; `collectGroupSiblings`, the drag tow), they are documented as
+ * agreeing, and a kind gated on one side only looks right until the layer is
+ * hidden: then a Delete removes something with nothing on screen, or a tow
+ * leaves one member standing where the group moved off. Spelled out per gesture
+ * that is two lists to keep in step, which is what the header at the top of this
+ * file says a registry is for.
+ *
+ * `stations` reads `showNetwork` straight rather than through `kindVisibleNow`:
+ * they nest under the master switch and have no box to check, exactly as
+ * `stationsForRectVisible` spells it.
+ */
+export function visibleSelectionKinds(): Record<SelectionKind, boolean> {
+  // Object.fromEntries widens the key type back to `string`, so the cast puts
+  // the registry's own keys back on — same shape as LOCKABLE_ENTRIES.
+  const gated = Object.fromEntries(
+    Object.entries(SELECTION_VISIBILITY_KEYS).map(([kind, key]) => [kind, kindVisibleNow(key)]),
+  ) as Record<Exclude<SelectionKind, 'stations'>, boolean>;
+  return { stations: useViewportStore.getState().showNetwork, ...gated };
+}
+
+/**
  * Write one flag. Non-reactive (click handlers call it), and the setter name is
  * DERIVED from the key rather than looked up in a second table — a per-key map
  * of setters is exactly the hand-written list this registry exists to delete,

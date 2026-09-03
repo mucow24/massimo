@@ -1,6 +1,5 @@
 import { useDoc, useSelection } from '../../state/store';
-import { useViewportStore } from '../../state/viewportStore';
-import { kindVisibleNow } from '../../state/visibility';
+import { visibleSelectionKinds } from '../../state/visibility';
 import { guideAlongOf, guideNudgeDelta } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import type { GuideOrientation } from '../../model/types';
@@ -80,17 +79,9 @@ export function emptyGroupSiblings(): GroupSiblings {
  */
 export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string): GroupSiblings {
   const sel = useSelection.getState();
-  const network = useViewportStore.getState().showNetwork;
-  const shows = {
-    stations: network,
-    bullets: kindVisibleNow('showRouteBullets'),
-    labels: kindVisibleNow('showTextLabels'),
-    polygons: kindVisibleNow('showPolygons'),
-    svgImages: kindVisibleNow('showSvgImages'),
-    anchors: kindVisibleNow('showAnchors'),
-    lineCircles: kindVisibleNow('showLineCircles'),
-    guides: kindVisibleNow('showGuides'),
-  };
+  // The same table the keyboard half reads (`unlockedSelectedItemIds`), so the
+  // two cannot drift into different opinions about which layers are on screen.
+  const shows = visibleSelectionKinds();
   // Spelled out as an exhaustive switch rather than a ternary chain ending in a
   // catch-all: the tail used to be a bare `: sel.selectedSvgImageIds`, so a new
   // GrabbedKind would have been silently tested against the svg-image selection

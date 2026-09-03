@@ -29,17 +29,13 @@ import { ANCHOR_HALF, STOP_SIZE } from './orientation';
 import { rectIntersectsPolygon } from './rectPolygon';
 import { stopMetricsOf } from '../model/stopMetrics';
 import type { RouteBullet } from '../model/types';
-import { makeLine } from '../test/fixtures';
+import { makeLine, makeRouteBullet } from '../test/fixtures';
 
-const makeBullet = (id: string, x: number, y: number, size = 12): RouteBullet => ({
-  id,
-  x,
-  y,
-  rotation: 0,
-  lineId: null,
-  shape: 'circle',
-  size,
-});
+// Positional over the shared fixture: these cases are about WHERE a bullet
+// sits, so the coordinates read better unnamed. `lineId: null` because nothing
+// here supplies a `lines` record for the fixture's default to resolve against.
+const makeBullet = (id: string, x: number, y: number, size = 12): RouteBullet =>
+  makeRouteBullet({ id, x, y, size, lineId: null });
 
 describe('cellsAABBLocal — per-stop widths', () => {
   // One stop at (0,0) on L1, label at the default (0,-1). HIT_PAD = 2.

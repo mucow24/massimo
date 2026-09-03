@@ -38,6 +38,17 @@ const VERSION = 2;
 // Accepts `#rrggbb` and (since colors carry alpha) `#rrggbbaa`.
 const HEX_COLOR = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 
+// The two field tests the four validators below are almost entirely made of.
+// Named rather than inlined because the inline spelling
+// (`typeof d.f !== 'number' || !Number.isFinite(d.f)`) states the field TWICE, at
+// every field of every validator, in a file whose whole job is to refuse a
+// hostile string — and naming the wrong field in the second half is invisible:
+// the check still accepts valid input and still rejects the obviously bad, so no
+// test would notice. Type predicates, so a passing check still narrows the
+// property to `number`/`string` and the value can be read without a cast.
+const finiteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const hexColor = (v: unknown): v is string => typeof v === 'string' && HEX_COLOR.test(v);
+
 export function writeClipboard(items: ClipPayload[]): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, items });
 }
@@ -113,21 +124,18 @@ function parseItem(raw: unknown): ClipPayload | null {
 function parseSvgImageData(raw: unknown): Omit<SvgImage, 'id'> | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as Record<string, unknown>;
-  if (typeof d.x !== 'number' || !Number.isFinite(d.x)) return null;
-  if (typeof d.y !== 'number' || !Number.isFinite(d.y)) return null;
-  if (typeof d.width !== 'number' || !Number.isFinite(d.width) || d.width <= 0) return null;
-  if (typeof d.height !== 'number' || !Number.isFinite(d.height) || d.height <= 0) return null;
+  if (!finiteNumber(d.x)) return null;
+  if (!finiteNumber(d.y)) return null;
+  if (!finiteNumber(d.width) || d.width <= 0) return null;
+  if (!finiteNumber(d.height) || d.height <= 0) return null;
   // Continuous rotation — finite is the only constraint (NOT the 0..7 octant).
-  if (typeof d.rotation !== 'number' || !Number.isFinite(d.rotation)) return null;
+  if (!finiteNumber(d.rotation)) return null;
   // Security: only an inline image data URI (svg/png/jpeg) is allowed. A
   // remote/script href from a crafted clipboard string would break the
   // opaque-sandbox guarantee.
   if (typeof d.href !== 'string' || !isAllowedImageHref(d.href)) return null;
   // Optional: reject a present-but-wrong type; leave an absent field absent.
-  if (
-    d.opacity !== undefined &&
-    (typeof d.opacity !== 'number' || !Number.isFinite(d.opacity) || d.opacity < 0 || d.opacity > 1)
-  ) {
+  if (d.opacity !== undefined && (!finiteNumber(d.opacity) || d.opacity < 0 || d.opacity > 1)) {
     return null;
   }
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
@@ -147,9 +155,9 @@ function parseSvgImageData(raw: unknown): Omit<SvgImage, 'id'> | null {
 function parseRouteBulletData(raw: unknown): Omit<RouteBullet, 'id'> | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as Record<string, unknown>;
-  if (typeof d.x !== 'number' || !Number.isFinite(d.x)) return null;
-  if (typeof d.y !== 'number' || !Number.isFinite(d.y)) return null;
-  if (typeof d.size !== 'number' || !Number.isFinite(d.size)) return null;
+  if (!finiteNumber(d.x)) return null;
+  if (!finiteNumber(d.y)) return null;
+  if (!finiteNumber(d.size)) return null;
   if (typeof d.rotation !== 'number') return null;
   if (d.rotation < 0 || d.rotation > 7 || !Number.isInteger(d.rotation)) return null;
   if (d.lineId !== null && typeof d.lineId !== 'string') return null;
@@ -175,31 +183,25 @@ function parseRouteBulletData(raw: unknown): Omit<RouteBullet, 'id'> | null {
 function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as Record<string, unknown>;
-  if (typeof d.x !== 'number' || !Number.isFinite(d.x)) return null;
-  if (typeof d.y !== 'number' || !Number.isFinite(d.y)) return null;
+  if (!finiteNumber(d.x)) return null;
+  if (!finiteNumber(d.y)) return null;
   if (typeof d.rotation !== 'number') return null;
   if (d.rotation < 0 || d.rotation > 7 || !Number.isInteger(d.rotation)) return null;
   if (typeof d.text !== 'string') return null;
-  if (typeof d.fontSize !== 'number' || !Number.isFinite(d.fontSize)) return null;
+  if (!finiteNumber(d.fontSize)) return null;
   if (!isLabelWeight(d.weight)) return null;
   if (typeof d.italic !== 'boolean') return null;
   if (!isTextLabelAlign(d.align)) return null;
-  if (typeof d.color !== 'string' || !HEX_COLOR.test(d.color)) return null;
-  if (typeof d.darkColor !== 'string' || !HEX_COLOR.test(d.darkColor)) return null;
+  if (!hexColor(d.color)) return null;
+  if (!hexColor(d.darkColor)) return null;
   // Optional: reject a present-but-wrong type; leave an absent flag absent.
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
   // Optional column width (0/absent = Auto). Reject a present-but-invalid value.
-  if (
-    d.width !== undefined &&
-    (typeof d.width !== 'number' || !Number.isFinite(d.width) || d.width < 0)
-  )
-    return null;
+  if (d.width !== undefined && (!finiteNumber(d.width) || d.width < 0)) return null;
   // Optional leading/tracking (absent = the 1 / 0 defaults). Range clamping is
   // updateTextLabel's job; here we only reject wrong types.
-  if (d.leading !== undefined && (typeof d.leading !== 'number' || !Number.isFinite(d.leading)))
-    return null;
-  if (d.tracking !== undefined && (typeof d.tracking !== 'number' || !Number.isFinite(d.tracking)))
-    return null;
+  if (d.leading !== undefined && !finiteNumber(d.leading)) return null;
+  if (d.tracking !== undefined && !finiteNumber(d.tracking)) return null;
   // Optional style tag. Only the type is checked here — whether the id
   // resolves in the RECEIVING doc is the paste transform's job (addTextLabelWith).
   if (d.styleId !== undefined && typeof d.styleId !== 'string') return null;
@@ -236,22 +238,18 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
   for (const v of d.vertices) {
     if (!v || typeof v !== 'object') return null;
     const pt = v as Record<string, unknown>;
-    if (typeof pt.x !== 'number' || !Number.isFinite(pt.x)) return null;
-    if (typeof pt.y !== 'number' || !Number.isFinite(pt.y)) return null;
+    if (!finiteNumber(pt.x)) return null;
+    if (!finiteNumber(pt.y)) return null;
     vertices.push({ x: pt.x, y: pt.y });
   }
-  if (typeof d.fill !== 'string' || !HEX_COLOR.test(d.fill)) return null;
-  if (typeof d.stroke !== 'string' || !HEX_COLOR.test(d.stroke)) return null;
-  if (typeof d.darkFill !== 'string' || !HEX_COLOR.test(d.darkFill)) return null;
-  if (typeof d.darkStroke !== 'string' || !HEX_COLOR.test(d.darkStroke)) return null;
-  if (typeof d.strokeWidth !== 'number' || !Number.isFinite(d.strokeWidth)) return null;
+  if (!hexColor(d.fill)) return null;
+  if (!hexColor(d.stroke)) return null;
+  if (!hexColor(d.darkFill)) return null;
+  if (!hexColor(d.darkStroke)) return null;
+  if (!finiteNumber(d.strokeWidth)) return null;
   // Optional fields: reject a present-but-wrong type; leave absent ones absent.
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
-  if (
-    d.curveRadius !== undefined &&
-    (typeof d.curveRadius !== 'number' || !Number.isFinite(d.curveRadius))
-  )
-    return null;
+  if (d.curveRadius !== undefined && !finiteNumber(d.curveRadius)) return null;
   if (d.closed !== undefined && typeof d.closed !== 'boolean') return null;
   // Optional style tag. Only the type is checked here — whether the id
   // resolves in the RECEIVING doc is the paste transform's job (addPolygonWith).
