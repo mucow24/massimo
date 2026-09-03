@@ -7,7 +7,6 @@ import {
   useSelection,
   type UiMode,
 } from '../state/store';
-import type { MapDoc } from '../model/types';
 import {
   useViewportStore,
   nextGridSize,
@@ -19,9 +18,6 @@ import {
 import { exportVisibilityOverrides } from '../state/visibility';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
-import { computeContentBounds } from '../geometry/contentBounds';
-import { fitViewport } from './canvas/viewportMath';
-import { clearHistory } from '../state/history';
 import {
   MAX_IMAGE_IMPORT_BYTES,
   isImageFileTooLarge,
@@ -42,7 +38,6 @@ import {
 import { getPayload, newMapId, saveVersion, type VersionMeta } from '../state/mapLibrary';
 import {
   EMPTY_DOC_JSON,
-  markAdopted,
   markSaved,
   saveStatusOf,
   useCanRevert,
@@ -50,6 +45,16 @@ import {
   useSaveStatus,
 } from '../state/saveBaseline';
 import { useLibraryPointer } from '../state/libraryPointer';
+import {
+  adoptParsedDoc,
+  becomeMap,
+  fitCameraToDoc,
+  openTabMapFromLibrary,
+  retargetTab,
+  switchTabToMap,
+  libraryRequestedAtBoot,
+} from '../state/mapTab';
+import { hasDocDraft } from '../state/mapKeys';
 import { MapLibraryDialog } from './MapLibraryDialog';
 import { Menu, MenuItem, MenuRadioGroup, MenuRadioItem, MenuSeparator, SubMenu } from './Menu';
 import {
@@ -168,8 +173,17 @@ export function Toolbar() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const [libraryOpen, setLibraryOpen] = useState(false);
+  // Open at boot when the tab named no map (main.tsx): a documents app opens
+  // on its list.
+  const [libraryOpen, setLibraryOpen] = useState(libraryRequestedAtBoot);
   const [palettesOpen, setPalettesOpen] = useState(false);
+  // A tab whose map has no working copy — a URL opened fresh, a reload after
+  // a clean save — comes up on the map's library version (mapTab.ts).
+  useEffect(() => {
+    openTabMapFromLibrary().catch((err: unknown) => {
+      pushToast('error', errorText(err, 'Could not open this map from the library.'));
+    });
+  }, []);
   /**
    * The tri-state save signal (saveBaseline.ts). 'clean' greys out Save
    * version — the doc byte-for-byte matches a library version, so a save
@@ -229,24 +243,8 @@ export function Toolbar() {
   // owned by store.ts, which also collects the placeholder again — the ordering
   // its lineCounter rollback depends on belongs next to the GC, not here.
   const onAddLine = () => startNewLineAppend();
-  // Point the camera at a doc's content: center it and zoom to fit, using the
-  // live SVG's pixel size (content-independent, so no wait for a render).
-  // Returns false — camera untouched — when the map is empty or the canvas
-  // isn't mounted. Shared by file-load and Reset view.
-  const fitCameraToDoc = (doc: MapDoc): boolean => {
-    const bounds = computeContentBounds(doc);
-    const svg = getCanvasSvg();
-    if (!bounds || !svg) return false;
-    // Fit to the VISIBLE canvas: the host box, not the svg — the svg is the
-    // oversized pan surface (2× per axis; see panSurfaceViewBox). A detached
-    // svg (tests) has no host and keeps its own rect.
-    const rect = (svg.closest('.canvas-host') ?? svg).getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    setViewport(fitViewport(bounds, { w: rect.width, h: rect.height }));
-    return true;
-  };
-  // Reset view = the same center+fit a fresh load gives; an empty map (or a
-  // canvas that isn't mounted yet) falls back to the origin at 100%.
+  // Reset view = the same center+fit a fresh load gives (mapTab.ts); an empty
+  // map (or a canvas that isn't mounted yet) falls back to the origin at 100%.
   const onResetView = () => {
     if (!fitCameraToDoc(useDoc.getState())) setViewport({ x: 0, y: 0, zoom: 1 });
   };
@@ -277,43 +275,14 @@ export function Toolbar() {
   };
 
   /**
-   * Replace the live document. Shared by every path that swaps one doc for
-   * another — file load, library load, New — so none of them can drift.
-   *
-   * `backed` says whether the incoming bytes exist as a library version
-   * (opening one) or not (a JSON file, New) — the difference between the doc
-   * starting out clean and starting out unsaved-but-armed.
-   */
-  const adoptParsedDoc = (doc: MapDoc, backed: boolean) => {
-    selection.selectStation(null);
-    selection.selectLine(null);
-    selection.selectLineTag(null);
-    selection.selectRouteBullet(null);
-    selection.selectTransfer(null);
-    selection.setUiMode({ kind: 'idle' });
-    selection.setEditingStationId(null);
-    useDoc.getState().loadDoc(doc);
-    clearHistory(); // undo must not splice two different documents
-    // The camera lives outside the doc (saved files are camera-agnostic), so a
-    // switch would otherwise keep the old pan/zoom and could land on a blank
-    // area. Falls back to the origin whenever the fit declines — empty content,
-    // canvas unmounted, or a zero-size rect.
-    if (!fitCameraToDoc(doc)) setViewport({ x: 0, y: 0, zoom: 1 });
-    // Anchor the baseline to the POST-load store state: those are the exact
-    // references the reactive status signal will compare against.
-    const snap = pickDocSnapshot(useDoc.getState());
-    (backed ? markSaved : markAdopted)(serialize(snap), snap);
-  };
-
-  /**
    * Write an 'auto' version of the live doc before something replaces it.
    * No-op when there is nothing to lose, or nothing has changed since the last
    * save or load.
    *
    * Deliberately does NOT move the pointer. This runs while a document is on
-   * its way out, and the caller sets the pointer to whatever is coming in; the
-   * map written here keeps its history and stays reachable from the library
-   * dialog, which is the whole job.
+   * its way out, and the caller makes the tab whatever map is coming in
+   * (becomeMap); the map written here keeps its history and stays reachable
+   * from the library dialog, which is the whole job.
    *
    * THROWS on a storage failure — every caller MUST abort its switch, or it
    * wipes a document it only thinks it saved.
@@ -326,8 +295,7 @@ export function Toolbar() {
     if (json === useSaveBaseline.getState().baselineJson) return; // already saved/loaded, verbatim
     auditExportDoc(snap); // bytes are leaving for the library — audit at the door
     const thumb = await tryCaptureThumbnail();
-    const id = useLibraryPointer.getState().mapId ?? newMapId();
-    await saveVersion(id, doc.name, json, 'auto', thumb);
+    await saveVersion(useLibraryPointer.getState().mapId, doc.name, json, 'auto', thumb);
     markSaved(json, snap);
   };
 
@@ -432,10 +400,9 @@ export function Toolbar() {
   /**
    * One save at a time. Nothing else can stop a second one: the clean-state
    * gate the menu item and Ctrl+S both honour doesn't flip until markSaved
-   * runs, two awaits later, and the map id is read AFTER the thumbnail await —
-   * so an overlapping pass reads the same empty pointer and mints a library
-   * map of its own. Two presses, two maps, each with its own v1 and neither
-   * prunable (isPrunable only reclaims 'auto' versions).
+   * runs, two awaits later — so an overlapping pass writes a second version
+   * of the same bytes, and neither is prunable (isPrunable only reclaims
+   * 'auto' versions).
    */
   const savingRef = useRef(false);
 
@@ -452,7 +419,7 @@ export function Toolbar() {
     savingRef.current = true;
     try {
       const thumb = await tryCaptureThumbnail();
-      const id = useLibraryPointer.getState().mapId ?? newMapId();
+      const id = useLibraryPointer.getState().mapId;
       const saved = await saveVersion(id, doc.name, json, 'user', thumb);
       useLibraryPointer.getState().setPointer(id, saved.version);
       markSaved(json, snap);
@@ -504,6 +471,11 @@ export function Toolbar() {
   const onNew = async () => {
     try {
       await autoSaveCurrent();
+      // A fresh map: an id of its own to save under (and to be, in the URL),
+      // but nothing saved under it yet, so no version to show until the first
+      // save. The tab becomes it BEFORE the wipe, so the empty doc's first
+      // write lands in its own slot.
+      await becomeMap(newMapId());
     } catch (err) {
       // The auto-save IS the backstop for a non-undoable wipe. If it failed,
       // there is nothing to fall back to — so don't wipe.
@@ -511,9 +483,6 @@ export function Toolbar() {
       return;
     }
     adoptParsedDoc(DEFAULT_DOC, false);
-    // A fresh map: it has an id to save under, but nothing saved under it yet,
-    // so there is no version to show until the first save.
-    useLibraryPointer.getState().setPointer(newMapId(), null);
   };
 
   /**
@@ -527,10 +496,10 @@ export function Toolbar() {
   const onMakeCopy = async () => {
     // Checkpoint a dirty source under its OWN id first, so the state at the
     // fork point lands in the source's history rather than existing only in
-    // the copy's line. A doc with no library identity (a loaded file) has no
-    // history to update — and the copy itself preserves the bytes — so no
-    // orphan map is minted for it.
-    if (useLibraryPointer.getState().mapId !== null) {
+    // the copy's line. A doc with no version yet (a loaded file, a New never
+    // saved) has no history to update — and the copy itself preserves the
+    // bytes — so no orphan map is minted for it.
+    if (useLibraryPointer.getState().version !== null) {
       try {
         await autoSaveCurrent();
       } catch (err) {
@@ -549,6 +518,9 @@ export function Toolbar() {
       const thumb = await tryCaptureThumbnail();
       const id = newMapId();
       const saved = await saveVersion(id, copyName, json, 'user', thumb);
+      // The canvas continues under the copy's identity — before the rename,
+      // so that write lands in the copy's slot, not the source's.
+      await retargetTab(id);
       useDoc.getState().setDocName(copyName);
       useLibraryPointer.getState().setPointer(id, saved.version);
       markSaved(json, snap);
@@ -578,8 +550,34 @@ export function Toolbar() {
     const result = parse(json, useCustomPalettes.getState().palettes);
     if (!result.ok) throw new Error(result.error);
     await autoSaveCurrent();
+    // Another map that still has a working copy — unsaved work from a window
+    // since closed (a window still on it holds its lock, and becomeMap says
+    // so). The map opens onto THAT, exactly as its URL would, rather than
+    // writing the version over the only copy of that work; the version is a
+    // second Open away, and by then the auto-save above has checkpointed it.
+    if (version.mapId !== useLibraryPointer.getState().mapId && hasDocDraft(version.mapId)) {
+      await switchTabToMap(version.mapId);
+      pushToast(
+        'info',
+        `Opened “${useDoc.getState().name}” with its unsaved changes — v${version.version} is still in the library`,
+      );
+      setLibraryOpen(false);
+      return;
+    }
+    await becomeMap(version.mapId);
     adoptParsedDoc(result.doc, true); // straight from the library: clean
     useLibraryPointer.getState().setPointer(version.mapId, version.version);
+    setLibraryOpen(false);
+  };
+
+  /**
+   * Open a working copy whose map has no library row — a New drawn and then
+   * closed on. Nothing but the dialog's draft list can reach it. Throws for
+   * the dialog to show, like onOpenVersion.
+   */
+  const onOpenDraft = async (mapId: string) => {
+    await autoSaveCurrent();
+    await switchTabToMap(mapId);
     setLibraryOpen(false);
   };
 
@@ -644,16 +642,17 @@ export function Toolbar() {
     // document.
     try {
       await autoSaveCurrent();
+      // A file is not a library map: it gets a fresh identity, so saving it
+      // makes a NEW map, the same way re-uploading a downloaded doc gives you
+      // a new doc. No version — the pill has nothing true to show until that
+      // first save.
+      await becomeMap(newMapId());
     } catch (err) {
       pushToast('error', errorText(err, 'Could not save the current map to the library.'));
       return;
     }
-    // A file is not a library map: it adopts as unsaved (Save stays armed to
-    // import it), and saving it makes a NEW map, the same way re-uploading a
-    // downloaded doc gives you a new doc. No id and no version — the pill has
-    // nothing true to show until that first save.
+    // It adopts as unsaved: Save stays armed to import it.
     adoptParsedDoc(result.doc, false);
-    useLibraryPointer.getState().setPointer(null, null);
   };
 
   // Add → Image…: read the file (svg text, or png/jpeg bytes), take its
@@ -887,7 +886,11 @@ export function Toolbar() {
         {selection.sidebarOpen ? <DoubleArrowRightIcon /> : <DoubleArrowLeftIcon />}
       </button>
       {libraryOpen && (
-        <MapLibraryDialog onClose={() => setLibraryOpen(false)} onOpenVersion={onOpenVersion} />
+        <MapLibraryDialog
+          onClose={() => setLibraryOpen(false)}
+          onOpenVersion={onOpenVersion}
+          onOpenDraft={onOpenDraft}
+        />
       )}
       {palettesOpen && <PalettesDialog onClose={() => setPalettesOpen(false)} />}
     </div>

@@ -1,7 +1,9 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
 import type { Viewport } from '../model/types';
 import { healPersistedUnion } from './persistedUnion';
+import { tabMapId } from './libraryPointer';
+import { cameraKey, VIEWPORT_PREFS_KEY } from './mapKeys';
 
 /** Grid cell sizes the toolbar button cycles through, in world units. */
 export const GRID_SIZES: readonly number[] = [5, 10, 20];
@@ -214,10 +216,53 @@ export function useLiveZoom(): number {
   return useLivePendingZoom() ?? committed;
 }
 
+type PersistedViewport = Partial<ViewportState>;
+
+/**
+ * One store, two slots. The camera is PER MAP — where you left off in the
+ * MTA map has nothing to do with where you are in the CTA one, and two tabs
+ * on two maps must not pan each other (mapKeys.ts) — while everything else
+ * here is a viewing preference of this browser, kept under one global key
+ * like the other *Prefs stores. So the adapter splits the blob persist hands
+ * it: x/y/zoom go under the tab's map, the rest under the preferences key,
+ * and a read stitches the two back together. A camera left in the
+ * preferences blob (a browser that predates the split) is dropped rather than
+ * read — the one-time adoption in mapKeys.ts has already lifted it out into
+ * the right map's slot.
+ */
+const readBlob = (key: string): StorageValue<PersistedViewport> | null => {
+  const raw = localStorage.getItem(key);
+  return raw ? (JSON.parse(raw) as StorageValue<PersistedViewport>) : null;
+};
+const splitCamera = (state: PersistedViewport) => {
+  const { x, y, zoom, ...prefs } = state;
+  return { camera: { x, y, zoom }, prefs };
+};
+const viewportStorage: PersistStorage<PersistedViewport> = {
+  getItem: () => {
+    const prefs = readBlob(VIEWPORT_PREFS_KEY);
+    const camera = readBlob(cameraKey(tabMapId()));
+    if (!prefs && !camera) return null;
+    return {
+      state: { ...splitCamera(prefs?.state ?? {}).prefs, ...(camera?.state ?? {}) },
+      version: prefs?.version ?? camera?.version ?? 0,
+    };
+  },
+  setItem: (_name, value) => {
+    const { camera, prefs } = splitCamera(value.state);
+    localStorage.setItem(VIEWPORT_PREFS_KEY, JSON.stringify({ ...value, state: prefs }));
+    localStorage.setItem(cameraKey(tabMapId()), JSON.stringify({ ...value, state: camera }));
+  },
+  removeItem: () => {
+    localStorage.removeItem(VIEWPORT_PREFS_KEY);
+    localStorage.removeItem(cameraKey(tabMapId()));
+  },
+};
+
 /**
  * Camera state (pan + zoom) lives outside MapDoc. It's UI/session state,
  * not document data — saved files are camera-agnostic, but local camera
- * memory across reloads still works via its own localStorage key.
+ * memory across reloads still works via the tab's map's own localStorage key.
  */
 export const useViewportStore = create<ViewportState>()(
   persist(
@@ -266,8 +311,10 @@ export const useViewportStore = create<ViewportState>()(
       setInterfaceTheme: (interfaceTheme) => set({ interfaceTheme }),
     }),
     {
+      // Nominal: the storage above keys the camera by map and the rest by
+      // VIEWPORT_PREFS_KEY.
       name: 'massimo-viewport',
-      storage: createJSONStorage(() => localStorage),
+      storage: viewportStorage,
       partialize: (s) => ({
         x: s.x,
         y: s.y,

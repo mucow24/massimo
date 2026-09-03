@@ -274,7 +274,7 @@ test.describe('Per-line stroke', () => {
     await expect(page.locator('[data-band-casing]')).toHaveCount(0);
     await expect(page.locator('[data-marker-casing]')).toHaveCount(0);
     const storedLine = await page.evaluate(
-      () => JSON.parse(localStorage.getItem('vignelli-map-doc-v1')!).state.lines.L1,
+      () => JSON.parse(localStorage.getItem('massimo-doc:e2e-map')!).state.lines.L1,
     );
     expect(storedLine.strokeWidth).toBeUndefined();
   });
@@ -288,7 +288,7 @@ test.describe('Per-line stroke', () => {
     await setStrokeTo(page, '30');
     // Stored uncapped…
     const stored = await page.evaluate(
-      () => JSON.parse(localStorage.getItem('vignelli-map-doc-v1')!).state.lines.L1.strokeWidth,
+      () => JSON.parse(localStorage.getItem('massimo-doc:e2e-map')!).state.lines.L1.strokeWidth,
     );
     expect(stored).toBe(30);
     // …the rendered railW clamps at the stripe width (14), so the silhouette is

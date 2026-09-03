@@ -10,7 +10,7 @@ async function startAddLine(page: Page): Promise<void> {
 
 async function readLines(page: Page): Promise<{ id: string; stations: string[] }[]> {
   return await page.evaluate(() => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     if (!raw) return [];
     const lines = JSON.parse(raw).state.lines as Record<
       string,

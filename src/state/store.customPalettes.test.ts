@@ -3,6 +3,8 @@ import { useDoc } from './store';
 import { useCustomPalettes } from './customPalettes';
 import { DEFAULT_DOC } from '../model/transforms';
 import { FALLBACK_LINE_COLOR, type Palette } from '../model/palettes';
+import { docKey } from './mapKeys';
+import { tabMapId } from './libraryPointer';
 
 const FRRF: Palette = { name: 'frrf', swatches: [{ name: '1', color: '#abcdef' }] };
 
@@ -62,7 +64,7 @@ describe('the persist merge hook drops empty palettes', () => {
   // can repair it. A hardcoded number stops testing that the day it bumps.
   const rehydrate = (palettes: unknown) => {
     localStorage.setItem(
-      'vignelli-map-doc-v1',
+      docKey(tabMapId()),
       JSON.stringify({ version: useDoc.persist.getOptions().version, state: { palettes } }),
     );
     useDoc.persist.rehydrate();

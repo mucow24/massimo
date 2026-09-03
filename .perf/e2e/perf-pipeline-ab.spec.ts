@@ -32,20 +32,20 @@ interface DocShape {
 }
 
 async function seedAt(page: Page, doc: DocShape, c: { x: number; y: number }) {
-  await page.goto('/');
+  await page.goto('/e2e-blank.html');
   await page.evaluate(
     ([k, v, vk, vv]) => {
       localStorage.setItem(k as string, v as string);
       localStorage.setItem(vk as string, vv as string);
     },
     [
-      'vignelli-map-doc-v1',
+      'massimo-doc:perf-map',
       JSON.stringify({ version: 22, state: doc }),
-      'massimo-viewport',
+      'massimo-camera:perf-map',
       JSON.stringify({ state: { x: c.x, y: c.y, zoom: 1 }, version: 0 }),
     ],
   );
-  await page.reload();
+  await page.goto('/#map=perf-map');
   await page.waitForSelector('.canvas-host svg');
   await page.waitForTimeout(1500);
 }

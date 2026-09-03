@@ -94,6 +94,8 @@ import { isHistoryGrouping, pauseHistory, pushHistory, resumeHistory } from './h
 import { reconcileRegionAssignments } from '../geometry/regionReconcile';
 import { regionGeometrySig, type GeometrySlice } from '../geometry/regionCache';
 import { useViewportStore } from './viewportStore';
+import { tabMapId } from './libraryPointer';
+import { docKey } from './mapKeys';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
 export { effectiveLineOrder };
@@ -250,7 +252,10 @@ const PERSIST_DEBOUNCE_MS = 300;
 let openHistoryGroup: { commit: () => void; cancel: () => void } | null = null;
 let openGroupDefersPersist = false;
 
-let pendingPersist: { name: string; value: StorageValue<DocSnapshot> } | null = null;
+// The key is resolved when the write is QUEUED, not when it lands: a switch to
+// another map between the two must not carry the outgoing doc's last frame
+// into the incoming map's slot.
+let pendingPersist: { key: string; value: StorageValue<DocSnapshot> } | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cancelPersistTimer(): void {
@@ -267,14 +272,14 @@ let persistRefused = false;
 
 function writePendingPersist(): void {
   if (!pendingPersist) return;
-  const { name, value } = pendingPersist;
+  const { key, value } = pendingPersist;
   // Clear the slot BEFORE the write: a blob that cannot fit must not be handed
   // to the next flush again, and the next set() supplies a fresh one anyway.
   pendingPersist = null;
   try {
     // Byte-identical to what createJSONStorage produced: a plain JSON.stringify
-    // of the same { state, version } StorageValue, on the same key.
-    localStorage.setItem(name, JSON.stringify(value));
+    // of the same { state, version } StorageValue.
+    localStorage.setItem(key, JSON.stringify(value));
     persistRefused = false;
   } catch {
     // Storage is full (a multi-MB imported image is the usual cause) or is
@@ -295,17 +300,20 @@ function writePendingPersist(): void {
   }
 }
 
+// Keyed by the map this TAB is on (mapKeys.ts), never by persist's `name`:
+// the working copy is one slot PER MAP, so two tabs on different maps never
+// write over each other, and a switch within a tab moves the writes with it.
 const debouncedDocStorage: PersistStorage<DocSnapshot> = {
-  getItem: (name) => {
+  getItem: () => {
     // Reads stay synchronous (rehydrate timing is unchanged from
     // createJSONStorage over localStorage).
-    const raw = localStorage.getItem(name);
+    const raw = localStorage.getItem(docKey(tabMapId()));
     return raw ? (JSON.parse(raw) as StorageValue<DocSnapshot>) : null;
   },
-  setItem: (name, value) => {
+  setItem: (_name, value) => {
     // The snapshot inside `value` is immutable (transforms replace objects),
     // so holding the reference and stringifying later cannot tear.
-    pendingPersist = { name, value };
+    pendingPersist = { key: docKey(tabMapId()), value };
     if (openHistoryGroup === null || !openGroupDefersPersist) {
       // Discrete or focus-scoped edit: write now, synchronously — the
       // pre-debounce contract. Only pointer-stream gestures defer.
@@ -318,12 +326,12 @@ const debouncedDocStorage: PersistStorage<DocSnapshot> = {
       writePendingPersist();
     }, PERSIST_DEBOUNCE_MS);
   },
-  removeItem: (name) => {
+  removeItem: () => {
     // Drop any pending write too — a debounced write must not resurrect a
     // deliberately cleared key.
     cancelPersistTimer();
     pendingPersist = null;
-    localStorage.removeItem(name);
+    localStorage.removeItem(docKey(tabMapId()));
   },
 };
 
@@ -331,6 +339,25 @@ const debouncedDocStorage: PersistStorage<DocSnapshot> = {
  *  timer. Safe to call when nothing is pending. */
 export function flushDocPersist(): void {
   cancelPersistTimer();
+  writePendingPersist();
+}
+
+/**
+ * Write the live doc to its map's slot NOW — the same bytes persist would
+ * write on the next edit. For a document that has just changed identity
+ * (mapTab's retargetTab): a clean doc has no slot (markSaved released it),
+ * and the new identity has no library row to boot from, so without this a
+ * reload would come up empty.
+ */
+export function writeDocDraftNow(): void {
+  cancelPersistTimer();
+  pendingPersist = {
+    key: docKey(tabMapId()),
+    value: {
+      state: pickDocSnapshot(useDoc.getState()),
+      version: useDoc.persist.getOptions().version ?? 0,
+    },
+  };
   writePendingPersist();
 }
 
@@ -1725,7 +1752,8 @@ export const useDoc = create<DocState>()(
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {
-        name: 'vignelli-map-doc-v1',
+        // Nominal: the storage above keys by map, not by this name.
+        name: 'massimo-doc',
         storage: debouncedDocStorage,
         version: 30,
         // Version migration chain v0 → v30 lives in `migrateDoc` (above), which

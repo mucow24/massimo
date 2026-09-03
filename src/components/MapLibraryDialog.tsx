@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as HoverCard from '@radix-ui/react-hover-card';
 import * as Toggle from '@radix-ui/react-toggle';
-import { Cross2Icon, StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
+import { Cross2Icon, ExternalLinkIcon, StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
 import {
   deleteMap,
   deleteVersion,
   listMaps,
   listVersions,
+  newMapId,
   renameMap,
   setMapStarred,
   setVersionName,
@@ -23,12 +24,22 @@ import { useLibraryPointer } from '../state/libraryPointer';
 import { useLibraryPrefs } from '../state/libraryPrefs';
 import { markUnbacked } from '../state/saveBaseline';
 import { useDoc } from '../state/store';
+import { retargetTab } from '../state/mapTab';
+import {
+  hasDocDraft,
+  listDocDrafts,
+  mapUrl,
+  readDocDraftName,
+  removeMapKeys,
+} from '../state/mapKeys';
 import { DialogSortSelect } from './dialogRow';
 
 interface Props {
   onClose: () => void;
   /** Adopt a version over the live doc. Rejects with a message worth showing. */
   onOpenVersion: (version: VersionMeta) => Promise<void>;
+  /** Become a map that has a working copy but no library row. Same contract. */
+  onOpenDraft: (mapId: string) => Promise<void>;
 }
 
 const when = (ms: number) =>
@@ -201,7 +212,7 @@ function RenameField({
  * flips to "Sure?" in place. Not a modal on a modal — there is no confirmation
  * dialog anywhere in this app.
  */
-export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
+export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props) {
   // null means "still loading" — distinct from [], which means "no maps yet".
   // Collapsing the two flashes "No saved maps" on every open.
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
@@ -306,15 +317,20 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
     }
     // A stale pointer would resurrect the row: saveVersion's write to the maps
     // store is an upsert, so the very next save re-creates what we just deleted.
-    // The baseline goes with it — the library no longer holds the live doc's
-    // bytes, and anything still treating it as "already saved" would decline
-    // to save a document that now exists nowhere else. Only the dialog knows:
-    // upstream, a cleared pointer looks identical to opening a JSON file, and
-    // that document is safe on disk.
+    // So the live doc continues under a fresh identity — its next save makes a
+    // new map. The baseline goes with it — the library no longer holds the
+    // live doc's bytes, and anything still treating it as "already saved"
+    // would decline to save a document that now exists nowhere else. Only the
+    // dialog knows: upstream, a fresh identity looks identical to opening a
+    // JSON file, and that document is safe on disk.
     if (useLibraryPointer.getState().mapId === id) {
-      useLibraryPointer.getState().setPointer(null, null);
+      await retargetTab(newMapId());
       markUnbacked();
     }
+    // The map's slots go with its rows (after the retarget above has moved
+    // the live doc's out of the way): a working copy left behind would be a
+    // multi-MB orphan that nothing lists.
+    removeMapKeys(id);
     if (selectedMapId === id) {
       setSelectedMapId(null);
       setVersions(null);
@@ -406,6 +422,25 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
     }
   };
 
+  const onOpenDraftRow = async (mapId: string) => {
+    setError(null);
+    try {
+      await onOpenDraft(mapId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open that draft.');
+    }
+  };
+
+  // Working copies whose map has no library row — a New drawn and closed on
+  // before its first save. Reachable from nowhere else, so they are listed
+  // here. The tab's own map is left out: with no row it is a New in progress,
+  // and it is already on the canvas.
+  const currentMapId = useLibraryPointer((s) => s.mapId);
+  const orphanDrafts =
+    maps === null
+      ? []
+      : listDocDrafts().filter((id) => id !== currentMapId && !maps.some((m) => m.id === id));
+
   const deleteButton = (key: string, label: string, run: () => void) =>
     confirmKey === key ? (
       <button type="button" className="danger" onClick={run}>
@@ -485,7 +520,41 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                 </div>
                 <div className="dialog-list">
                   {visibleMaps === null && <div className="empty">Loading…</div>}
-                  {visibleMaps?.length === 0 && (
+                  {orphanDrafts.map((id) => {
+                    const name = readDocDraftName(id) ?? 'Untitled map';
+                    return (
+                      <div key={id} className="dialog-row map-row map-row-orphan">
+                        <span className="map-thumb map-thumb-blank" aria-hidden="true" />
+                        <div className="dialog-row-body">
+                          <strong>{name}</strong>
+                          <span className="dialog-row-meta">
+                            <span className="map-row-draft">unsaved draft</span> · not in the
+                            library yet
+                          </span>
+                        </div>
+                        <div className="dialog-row-actions">
+                          <a
+                            className="map-row-link"
+                            href={mapUrl(id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            aria-label={`Open ${name} in a new tab`}
+                            title="Open in a new tab"
+                          >
+                            <ExternalLinkIcon />
+                          </a>
+                          <button
+                            type="button"
+                            aria-label={`Open draft ${name}`}
+                            onClick={() => void onOpenDraftRow(id)}
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {visibleMaps?.length === 0 && orphanDrafts.length === 0 && (
                     <div className="empty">
                       {starredMapsOnly ? 'No starred maps.' : 'No saved maps yet.'}
                     </div>
@@ -511,9 +580,26 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                         <span className="dialog-row-meta">
                           {m.versionCount} version{m.versionCount === 1 ? '' : 's'} ·{' '}
                           {when(m.updatedAt)}
+                          {/* A working copy the library does not hold (mapKeys.ts):
+                              edits in this window, or left by one since closed. */}
+                          {hasDocDraft(m.id) && (
+                            <span className="map-row-draft"> · unsaved changes</span>
+                          )}
                         </span>
                       </div>
                       <div className="dialog-row-actions" onClick={(e) => e.stopPropagation()}>
+                        {/* A real link: the map's own URL, so a middle-click or a
+                            bookmark works the way it does for any document. */}
+                        <a
+                          className="map-row-link"
+                          href={mapUrl(m.id)}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Open ${m.name} in a new tab`}
+                          title="Open in a new tab"
+                        >
+                          <ExternalLinkIcon />
+                        </a>
                         <StarToggle
                           starred={m.starred ?? false}
                           label={`${m.starred ? 'Unstar' : 'Star'} ${m.name}`}

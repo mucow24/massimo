@@ -9,9 +9,12 @@ import {
   markAdopted,
   markSaved,
   markUnbacked,
+  rebootBaseline,
   saveStatusOf,
   useSaveBaseline,
 } from './saveBaseline';
+import { baselineKey, docKey } from './mapKeys';
+import { tabMapId } from './libraryPointer';
 
 const statusNow = () => saveStatusOf(useDoc.getState(), useSaveBaseline.getState());
 
@@ -111,6 +114,54 @@ describe('saveStatusOf — the tri-state signal', () => {
     expect(statusNow()).toBe('clean');
     markUnbacked();
     expect(statusNow()).toBe('dirty');
+  });
+});
+
+/**
+ * The working copy (the doc store's slot, mapKeys.ts) exists for work the
+ * library does not hold. A save hands the bytes to the library, so the slot
+ * goes — unless an edit landed during the save's awaits, in which case the
+ * slot is the only place that edit exists.
+ */
+describe('markSaved — releasing the working copy', () => {
+  const draft = () => localStorage.getItem(docKey(tabMapId()));
+
+  it('drops the working copy when the live doc still is the saved snapshot', () => {
+    useDoc.getState().addStation(0, 0);
+    expect(draft()).not.toBeNull(); // the edit wrote it
+    anchor(markSaved);
+    expect(draft()).toBeNull();
+  });
+
+  it('keeps the working copy when an edit landed after the snapshot was taken', () => {
+    useDoc.getState().addStation(0, 0);
+    const snap = pickDocSnapshot(useDoc.getState());
+    const json = serialize(snap);
+    useDoc.getState().addStation(100, 0); // mid-save edit: in the slot and nowhere else
+    markSaved(json, snap);
+    expect(draft()).not.toBeNull();
+    expect(statusNow()).toBe('dirty');
+  });
+
+  it('an adopted doc (a file, New) keeps its working copy — the library has no copy', () => {
+    useDoc.getState().addStation(0, 0);
+    anchor(markAdopted);
+    expect(draft()).not.toBeNull();
+  });
+
+  it('records the baseline under the tab’s map, not a global key', () => {
+    anchor(markSaved);
+    expect(localStorage.getItem(baselineKey(tabMapId()))).toContain('"backed":true');
+    expect(localStorage.getItem('massimo-save-baseline')).toBeNull();
+  });
+
+  it('rebootBaseline re-reads the map’s record against the live doc', () => {
+    useDoc.getState().addStation(0, 0);
+    anchor(markSaved);
+    useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
+    expect(statusNow()).toBe('dirty');
+    void rebootBaseline();
+    expect(statusNow()).toBe('clean');
   });
 });
 

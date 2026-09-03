@@ -68,7 +68,7 @@ async function stopWorldOffset(
 // Station rotation read straight from the persisted doc.
 async function stationRotation(page: Page, id: string): Promise<number> {
   return await page.evaluate((sid) => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     if (!raw) throw new Error('no persisted doc');
     return JSON.parse(raw).state.stations[sid].rotation as number;
   }, id);

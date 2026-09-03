@@ -22,6 +22,7 @@ interface Boot {
   lib: typeof import('./mapLibrary');
   hist: typeof import('./history');
   ser: typeof import('../model/serialize');
+  tab: typeof import('./mapTab');
 }
 
 const boot = async (): Promise<Boot> => {
@@ -38,6 +39,7 @@ const boot = async (): Promise<Boot> => {
     lib: await import('./mapLibrary'),
     hist: await import('./history'),
     ser: await import('../model/serialize'),
+    tab: await import('./mapTab'),
   };
 };
 
@@ -48,6 +50,8 @@ beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
   globalThis.IDBKeyRange = IDBKeyRange as unknown as typeof globalThis.IDBKeyRange;
   localStorage.clear();
+  // The tab is on map m1 throughout — the map every save below writes under.
+  window.history.replaceState(null, '', '#map=m1');
 });
 
 const statusNow = (m: Boot) =>
@@ -166,17 +170,20 @@ describe('bootRecovery — the Revert target across a dirty refresh', () => {
     expect(statusNow(m2)).toBe('dirty');
   });
 
-  it('no-ops on a clean reload — boot already restored the baseline', async () => {
+  it('no-ops on a clean reload — the boot from the library anchored the baseline', async () => {
     const m1 = await boot();
     m1.store.useDoc.getState().addStation(0, 0);
     await saveToLibrary(m1, 'm1');
 
+    // A clean save releases the working copy, so the reload comes up from
+    // the library (mapTab.ts) — and that adoption IS the baseline.
     const m2 = await boot();
+    await m2.tab.openTabMapFromLibrary();
     await m2.sb.bootRecovery;
     expect(statusNow(m2)).toBe('clean');
     expect(canRevertNow(m2)).toBe(false);
-    // And the baseline is the boot-restored one — the live doc's own
-    // references, not a re-parsed copy the recovery fetched over it.
+    // And the baseline is the adopted doc's own references, not a re-parsed
+    // copy the recovery fetched over it.
     expect(m2.sb.useSaveBaseline.getState().baselineSnap?.stations).toBe(
       m2.store.useDoc.getState().stations,
     );

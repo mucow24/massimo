@@ -4,6 +4,11 @@ import { DEFAULT_DOC } from '../model/transforms';
 import { parse, serialize, SCHEMA_FORMAT } from '../model/serialize';
 import { PALETTES } from '../model/palettes';
 import { makeDoc, makeLine, makeStation, makeStop, makeTransfer } from './fixtures';
+import { docKey } from '../state/mapKeys';
+import { tabMapId } from '../state/libraryPointer';
+
+// The live doc's own slot — the working copy is keyed by the tab's map.
+const DOC_KEY = docKey(tabMapId());
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -313,7 +318,7 @@ describe('localStorage rehydrate — the repairs a same-version doc still needs'
   /** Seed a same-version blob carrying `state`, then rehydrate through it. */
   const rehydrateAtCurrentVersion = async (state: Record<string, unknown>): Promise<void> => {
     localStorage.setItem(
-      'vignelli-map-doc-v1',
+      DOC_KEY,
       JSON.stringify({ version: useDoc.persist.getOptions().version, state }),
     );
     await useDoc.persist.rehydrate();
@@ -330,7 +335,7 @@ describe('localStorage rehydrate — the repairs a same-version doc still needs'
     // quietly started exercising `migrate` instead of the `merge` hook it
     // exists to guard.
     localStorage.setItem(
-      'vignelli-map-doc-v1',
+      DOC_KEY,
       JSON.stringify({
         version: useDoc.persist.getOptions().version,
         state: {
@@ -361,7 +366,7 @@ describe('localStorage rehydrate — the repairs a same-version doc still needs'
     // `migrate` entirely — so the merge hook must run bakeConcreteDotSizes,
     // same reasoning as the edges backfill above.
     localStorage.setItem(
-      'vignelli-map-doc-v1',
+      DOC_KEY,
       JSON.stringify({
         version: useDoc.persist.getOptions().version,
         state: {
@@ -395,7 +400,7 @@ describe('localStorage rehydrate — the repairs a same-version doc still needs'
   // dirty state, not damage).
   it('drops a dangling DESIGN ref on rehydrate, and keeps a divergent one', async () => {
     localStorage.setItem(
-      'vignelli-map-doc-v1',
+      DOC_KEY,
       JSON.stringify({
         version: useDoc.persist.getOptions().version,
         state: {

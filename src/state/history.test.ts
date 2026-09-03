@@ -18,6 +18,8 @@ import {
 } from './store';
 import type { DocSnapshot } from './store';
 import { DEFAULT_DOC } from '../model/transforms';
+import { docKey } from './mapKeys';
+import { tabMapId } from './libraryPointer';
 
 describe('pushHistory — undo-stack cap', () => {
   let snap: DocSnapshot;
@@ -229,7 +231,7 @@ describe('undo / redo — persistence flush', () => {
   // reaches persist's storage writer. Without an explicit flush, the stored
   // blob keeps the pre-undo edit and a refresh resurrects it (edit → Ctrl+Z →
   // reload brings the edit back). These assert the persisted bytes track undo.
-  const KEY = 'vignelli-map-doc-v1';
+  const KEY = docKey(tabMapId());
   const persistedName = (): unknown => {
     const raw = localStorage.getItem(KEY);
     return raw ? (JSON.parse(raw).state?.name as unknown) : undefined;

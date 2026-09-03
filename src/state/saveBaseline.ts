@@ -2,9 +2,10 @@ import { create } from 'zustand';
 import { docSnapshotsEqual, pickDocSnapshot, useDoc, type DocSnapshot } from './store';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
-import { useLibraryPointer } from './libraryPointer';
+import { tabMapId, useLibraryPointer } from './libraryPointer';
 import { getPayload, listVersions } from './mapLibrary';
 import { useCustomPalettes } from './customPalettes';
+import { baselineKey, removeDocDraft } from './mapKeys';
 
 /**
  * The save baseline: what the live document would have to look like to count
@@ -54,13 +55,13 @@ export const EMPTY_DOC_JSON = serialize(pickDocSnapshot(DEFAULT_DOC));
 
 /**
  * Where the baseline survives a refresh: a hash of the baseline bytes plus
- * the backed bit, in localStorage. The bytes themselves would double the
- * doc's storage footprint (svg images carry data URIs), so on boot the
- * rehydrated doc is re-serialized and compared by hash instead — a match
- * restores the baseline, a mismatch errs dirty, the same direction a null
- * baseline errs.
+ * the backed bit, in localStorage under the tab's map (mapKeys.ts). The bytes
+ * themselves would double the doc's storage footprint (svg images carry data
+ * URIs), so on boot the rehydrated doc is re-serialized and compared by hash
+ * instead — a match restores the baseline, a mismatch errs dirty, the same
+ * direction a null baseline errs.
  */
-const PERSIST_KEY = 'massimo-save-baseline';
+const persistKey = (): string => baselineKey(tabMapId());
 
 /** FNV-1a over the code units, prefixed with the length. Not cryptographic —
  *  a collision costs one wrongly-quiet dot until the next edit, on a
@@ -91,7 +92,7 @@ const UNSET: SaveBaselineState = { baselineSnap: null, baselineJson: null, backe
 export function bootBaselineState(): SaveBaselineState {
   const snap = pickDocSnapshot(useDoc.getState());
   const json = serialize(snap);
-  const raw = localStorage.getItem(PERSIST_KEY);
+  const raw = localStorage.getItem(persistKey());
   if (raw !== null) {
     try {
       const parsed = JSON.parse(raw) as { h?: unknown; backed?: unknown };
@@ -110,16 +111,26 @@ export function bootBaselineState(): SaveBaselineState {
 export const useSaveBaseline = create<SaveBaselineState>()(() => bootBaselineState());
 
 const persistBaseline = (json: string, backed: boolean): void => {
-  localStorage.setItem(PERSIST_KEY, JSON.stringify({ h: hashBaseline(json), backed }));
+  localStorage.setItem(persistKey(), JSON.stringify({ h: hashBaseline(json), backed }));
 };
 
-/** The doc was written to the library (or adopted straight from it): these
- *  bytes ARE a library version. `json`/`snap` must be captured together from
- *  the same state — and BEFORE any await, so an edit that lands mid-save
- *  leaves the doc correctly dirty. */
+/**
+ * The doc was written to the library (or adopted straight from it): these
+ * bytes ARE a library version. `json`/`snap` must be captured together from
+ * the same state — and BEFORE any await, so an edit that lands mid-save
+ * leaves the doc correctly dirty.
+ *
+ * Also releases the map's working copy, IF the live doc still is the snapshot
+ * just vouched for: the library holds those bytes now, and a working copy
+ * exists only for work the library does not hold (mapKeys.ts). An edit that
+ * landed during the save's awaits is such work — it is in the slot and
+ * nowhere else — so the slot stays for it, and the next boot comes back to it
+ * rather than to the version.
+ */
 export function markSaved(json: string, snap: DocSnapshot): void {
   useSaveBaseline.setState({ baselineSnap: snap, baselineJson: json, backed: true });
   persistBaseline(json, true);
+  if (docSnapshotsEqual(useDoc.getState(), snap)) removeDocDraft(tabMapId());
 }
 
 /** The doc was adopted from outside the library (a JSON file, New): clean,
@@ -140,7 +151,7 @@ export function markAdopted(json: string, snap: DocSnapshot): void {
  */
 export function markUnbacked(): void {
   useSaveBaseline.setState(UNSET);
-  localStorage.removeItem(PERSIST_KEY);
+  localStorage.removeItem(persistKey());
 }
 
 /** The tri-state signal, pure. `doc` is the live doc state (any superset of
@@ -196,7 +207,7 @@ export function useCanRevert(): boolean {
  */
 async function recoverBaselineFromLibrary(): Promise<void> {
   if (useSaveBaseline.getState().baselineSnap !== null) return; // boot restored it
-  const raw = localStorage.getItem(PERSIST_KEY);
+  const raw = localStorage.getItem(persistKey());
   if (raw === null) return; // nothing recorded — or markUnbacked, which must stay unset
   let recorded: { h?: unknown; backed?: unknown };
   try {
@@ -206,7 +217,7 @@ async function recoverBaselineFromLibrary(): Promise<void> {
   }
   if (recorded.backed !== true) return;
   const { mapId, version } = useLibraryPointer.getState();
-  if (mapId === null || version === null) return;
+  if (version === null) return;
 
   // Best-effort IO: a storage failure declines, same as a missing row.
   let payload: string | undefined;
@@ -228,8 +239,19 @@ async function recoverBaselineFromLibrary(): Promise<void> {
   // mid-fetch owns the baseline now, and markUnbacked in particular must not
   // be resurrected (see its doc comment).
   if (useSaveBaseline.getState().baselineSnap !== null) return;
-  if (localStorage.getItem(PERSIST_KEY) !== raw) return;
+  if (localStorage.getItem(persistKey()) !== raw) return;
   useSaveBaseline.setState({ baselineSnap: snap, baselineJson: json, backed: true });
+}
+
+/**
+ * The boot sequence again, for a tab that has just become another map
+ * (mapTab.ts): read that map's record against the doc now on the canvas, then
+ * fetch the bytes from the library if the record vouches for a version the
+ * canvas has moved past.
+ */
+export function rebootBaseline(): Promise<void> {
+  useSaveBaseline.setState(bootBaselineState());
+  return recoverBaselineFromLibrary();
 }
 
 /** Fired once at boot, beside `bootBaselineState`; exported so tests (and any

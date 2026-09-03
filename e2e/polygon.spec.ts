@@ -14,7 +14,7 @@ interface PolygonState {
 
 async function readPolygons(page: Page): Promise<Record<string, PolygonState>> {
   return await page.evaluate(() => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     if (!raw) return {};
     return (JSON.parse(raw).state.polygons ?? {}) as Record<string, PolygonState>;
   });
@@ -181,7 +181,7 @@ test.describe('Polygon shapes', () => {
 // what comes back here is polygon ids only.
 async function backgroundOrder(page: Page): Promise<string[]> {
   return await page.evaluate(() => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     return raw ? (JSON.parse(raw).state.backgroundOrder ?? []) : [];
   });
 }
@@ -257,7 +257,7 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await page.mouse.click(CENTER.x, CENTER.y);
     // A station was placed, and the polygon was NOT selected.
     const stationCount = await page.evaluate(() => {
-      const raw = localStorage.getItem('vignelli-map-doc-v1');
+      const raw = localStorage.getItem('massimo-doc:e2e-map');
       return raw ? Object.keys(JSON.parse(raw).state.stations ?? {}).length : 0;
     });
     expect(stationCount).toBe(1);

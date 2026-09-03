@@ -3069,6 +3069,28 @@ button.dialog-sort {
   align-items: center;
   gap: 4px;
 }
+/* The map's own URL, as a link: quiet like the star, a command on approach. */
+.map-row-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+.map-row-link:hover {
+  color: var(--text);
+  background: var(--control-hover);
+}
+/* A working copy the library does not hold — the meta line names it. */
+.map-row-draft {
+  color: var(--danger);
+  font-weight: 600;
+}
 /* Row commands on the popovers' small-button recipe: hairline, quiet until
    approached. (The star opts back out below — it is a state, not a command.)
    The column head's own commands take the same recipe, so a "Load…" beside a

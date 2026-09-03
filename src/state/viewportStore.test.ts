@@ -6,6 +6,8 @@ import {
   chromeIsDark,
   GRID_SIZES,
 } from './viewportStore';
+import { useLibraryPointer } from './libraryPointer';
+import { cameraKey } from './mapKeys';
 
 beforeEach(() => {
   localStorage.clear();
@@ -41,6 +43,61 @@ describe('viewportStore — setViewport voids the live viewport', () => {
     useLiveViewportStore.getState().setPending({ x: 5, y: 5, zoom: 2 });
     useViewportStore.getState().setViewport({ x: 100, y: 50, zoom: 1 });
     expect(useLiveViewportStore.getState().pending).toBeNull();
+  });
+});
+
+/**
+ * The camera is the one viewport field that belongs to a MAP: it persists
+ * under the tab's map (mapKeys.ts), while the view preferences stay under the
+ * one global key. Two tabs on two maps must not pan each other.
+ */
+describe('viewportStore — the camera is per map, the preferences are global', () => {
+  const cameraOf = (mapId: string) =>
+    JSON.parse(localStorage.getItem(cameraKey(mapId)) ?? 'null')?.state;
+  const prefs = () => JSON.parse(localStorage.getItem('massimo-viewport') ?? 'null')?.state;
+
+  it('writes the camera under the tab’s map and keeps it out of the preferences', () => {
+    useLibraryPointer.setState({ mapId: 'map-a' });
+    useViewportStore.getState().setViewport({ x: 10, y: 20, zoom: 2 });
+    expect(cameraOf('map-a')).toEqual({ x: 10, y: 20, zoom: 2 });
+    expect(prefs()).not.toHaveProperty('x');
+    expect(prefs()).not.toHaveProperty('zoom');
+    expect(prefs()).toHaveProperty('gridSize');
+  });
+
+  it('two maps keep two cameras', () => {
+    useLibraryPointer.setState({ mapId: 'map-a' });
+    useViewportStore.getState().setViewport({ x: 10, y: 20, zoom: 2 });
+    useLibraryPointer.setState({ mapId: 'map-b' });
+    useViewportStore.getState().setViewport({ x: -5, y: 0, zoom: 0.5 });
+    expect(cameraOf('map-a')).toEqual({ x: 10, y: 20, zoom: 2 });
+    expect(cameraOf('map-b')).toEqual({ x: -5, y: 0, zoom: 0.5 });
+  });
+
+  it('rehydrates the camera of the map the tab is on, over the global preferences', async () => {
+    localStorage.setItem(
+      'massimo-viewport',
+      JSON.stringify({ state: { gridSize: 20, gridVisible: false }, version: 0 }),
+    );
+    localStorage.setItem(
+      cameraKey('map-a'),
+      JSON.stringify({ state: { x: 7, y: 8, zoom: 3 }, version: 0 }),
+    );
+    useLibraryPointer.setState({ mapId: 'map-a' });
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState()).toMatchObject({ x: 7, y: 8, zoom: 3, gridSize: 20 });
+    expect(useViewportStore.getState().gridVisible).toBe(false);
+  });
+
+  it('ignores a camera left in the preferences blob by a browser that predates the split', async () => {
+    useViewportStore.setState({ x: 1, y: 1, zoom: 1 });
+    localStorage.setItem(
+      'massimo-viewport',
+      JSON.stringify({ state: { x: 99, y: 99, zoom: 9, gridSize: 20 }, version: 0 }),
+    );
+    useLibraryPointer.setState({ mapId: 'map-fresh' });
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState()).toMatchObject({ x: 1, y: 1, zoom: 1, gridSize: 20 });
   });
 });
 

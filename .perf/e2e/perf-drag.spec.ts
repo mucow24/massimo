@@ -53,20 +53,20 @@ function loadDoc(): DocShape {
 
 /** Seed the doc + a camera centred on `centre`, then reload. */
 async function seedAt(page: Page, doc: DocShape, centre: { x: number; y: number }): Promise<void> {
-  await page.goto('/');
+  await page.goto('/e2e-blank.html');
   await page.evaluate(
     ([key, value, vkey, vp]) => {
       localStorage.setItem(key as string, value as string);
       localStorage.setItem(vkey as string, vp as string);
     },
     [
-      'vignelli-map-doc-v1',
+      'massimo-doc:perf-map',
       JSON.stringify({ version: 22, state: doc }),
-      'massimo-viewport',
+      'massimo-camera:perf-map',
       JSON.stringify({ state: { x: centre.x, y: centre.y, zoom: 1 }, version: 0 }),
     ],
   );
-  await page.reload();
+  await page.goto('/#map=perf-map');
   await page.waitForSelector('.canvas-host svg');
   // Let the first full build settle before timing anything.
   await page.waitForTimeout(1500);

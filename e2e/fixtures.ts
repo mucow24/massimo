@@ -22,8 +22,18 @@ import { STOP_DOT_FACTORY_STYLES } from '../src/model/dotStyle';
  */
 export const onSubstituteFaces = existsSync('public/fonts/.substitute');
 
-// Mirrors the partialized shape persisted by the doc store
-// (`vignelli-map-doc-v1` in localStorage).
+// Mirrors the partialized shape persisted by the doc store (the map's
+// `massimo-doc:<id>` slot in localStorage — see src/state/mapKeys.ts).
+
+/**
+ * The map every seeded test is on. A tab is on ONE map, named in the URL
+ * (`#map=<id>`), and the working copy lives under that map's own key — so the
+ * seed writes `massimo-doc:e2e-map` and opens `/#map=e2e-map`. Specs that read
+ * the persisted doc back spell the same key out (a page.evaluate callback
+ * cannot close over this constant).
+ */
+export const E2E_MAP_ID = 'e2e-map';
+export const DOC_KEY = `massimo-doc:${E2E_MAP_ID}`;
 
 export interface SeedStation {
   id: string;
@@ -147,13 +157,13 @@ export interface Seed {
 }
 
 /**
- * Write a raw persisted doc (+ camera) into localStorage and open the app on
- * it — ONE full app boot per test. localStorage is only writable from a
- * same-origin document, so prime the origin with the static blank page in
- * public/ (a trivial fetch, not an app boot), write both keys, then load the
- * app for real. Callers whose docs the typed `Seed` can't express (legacy
- * shapes, raw persist versions) use this directly; everything else goes
- * through seedAndOpen.
+ * Write a raw persisted doc (+ camera) into a map's localStorage slots and
+ * open the app on that map — ONE full app boot per test. localStorage is only
+ * writable from a same-origin document, so prime the origin with the static
+ * blank page in public/ (a trivial fetch, not an app boot), write both keys,
+ * then load the app for real, on the map's URL. Callers whose docs the typed
+ * `Seed` can't express (legacy shapes, raw persist versions) use this
+ * directly; everything else goes through seedAndOpen.
  *
  * NOT addInitScript (the obvious zero-extra-navigation alternative): init
  * scripts re-run on EVERY navigation, so specs that mutate state and then
@@ -164,21 +174,22 @@ export async function openWithRawDoc(
   page: Page,
   persisted: unknown,
   viewport: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 },
+  mapId: string = E2E_MAP_ID,
 ): Promise<void> {
   await page.goto('/e2e-blank.html');
   await page.evaluate(
-    ([key, value, viewportKey, vp]) => {
+    ([key, value, cameraKey, camera]) => {
       localStorage.setItem(key as string, value as string);
-      localStorage.setItem(viewportKey as string, vp as string);
+      localStorage.setItem(cameraKey as string, camera as string);
     },
     [
-      'vignelli-map-doc-v1',
+      `massimo-doc:${mapId}`,
       JSON.stringify(persisted),
-      'massimo-viewport',
+      `massimo-camera:${mapId}`,
       JSON.stringify({ state: viewport, version: 0 }),
     ],
   );
-  await page.goto('/');
+  await page.goto(`/#map=${mapId}`);
   // Wait until the SVG is in place — proxy for "doc loaded".
   await page.waitForSelector('.canvas-host svg');
 }
@@ -197,7 +208,15 @@ export async function seedAndOpen(
   // `stopDotLibrary`: seed the FULL known dot-preset catalog into the doc — a
   // fresh map now ships only the pruned seed (Filled black + None), so picker
   // tests that reach for "Filled black diamond" / "Dash (tick)" opt in here.
-  opts: { zoom?: number; x?: number; y?: number; stopDotLibrary?: boolean } = {},
+  // `mapId`: which map to be — a second seed under another id is a second MAP
+  // (the library keys by id, not by name).
+  opts: {
+    zoom?: number;
+    x?: number;
+    y?: number;
+    stopDotLibrary?: boolean;
+    mapId?: string;
+  } = {},
 ): Promise<void> {
   const stations: Record<string, unknown> = {};
   for (const s of seed.stations) {
@@ -324,11 +343,12 @@ export async function seedAndOpen(
     },
   };
 
-  await openWithRawDoc(page, persisted, {
-    x: opts.x ?? 0,
-    y: opts.y ?? 0,
-    zoom: opts.zoom ?? 1,
-  });
+  await openWithRawDoc(
+    page,
+    persisted,
+    { x: opts.x ?? 0, y: opts.y ?? 0, zoom: opts.zoom ?? 1 },
+    opts.mapId ?? E2E_MAP_ID,
+  );
 }
 
 /**

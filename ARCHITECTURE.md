@@ -15,8 +15,8 @@ document describes the code as it stands; it is not a changelog. Use `git log` f
 metro/subway maps in the visual language of Massimo Vignelli's 1972 NYC subway diagram:
 octolinear (45°-step) colored line "stripes", interlined into parallel bands, with circular
 stop dots, route bullets, and crisp neo-grotesque labels. It renders entirely to **SVG**,
-runs fully client-side (no backend), and persists to `localStorage`. It is alpha software with
-essentially one user (the developer).
+runs fully client-side (no backend), and persists to `localStorage` (the working copy, per map)
+and IndexedDB (the map library). It is alpha software with essentially one user (the developer).
 
 Stack: **React 18 + TypeScript + Vite**, **Zustand** for state, **zundo** for undo/redo,
 **Vitest** (jsdom) for unit tests, **Playwright** for e2e. No heavyweight UI framework — the
@@ -229,7 +229,14 @@ src/
                                 #   covers, derived once for the three surfaces that show them
     mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
     libraryPrefs.ts             # useLibraryPrefs: map-library UI prefs (sort mode; two star filters)
-    libraryPointer.ts           # useLibraryPointer: which map + version the live doc came from
+    mapKeys.ts                  # the per-map localStorage keys (doc / baseline / camera / pointer,
+                                #   by map id), the URL fragment naming the tab's map, and the
+                                #   one-time adoption of the pre-per-map keys (no store)
+    libraryPointer.ts           # useLibraryPointer: which map this TAB is on (from the URL) + the
+                                #   version its document came from (persisted per map)
+    mapLock.ts                  # one editing window per map: a Web Lock held per map id (no store)
+    mapTab.ts                   # the tab ↔ map coordinator: becomeMap / retargetTab /
+                                #   switchTabToMap / openTabMapFromLibrary + adoptParsedDoc (no store)
     saveBaseline.ts             # useSaveBaseline: baseline + tri-state clean/dirty/unsaved signal
                                 #   (gates Save version + the toolbar dot; hash survives refresh)
     toastStore.ts               # useToasts: stacking status toasts (pushToast from anywhere)
@@ -1802,7 +1809,8 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 30`, `migrate:
+The zustand `persist` config: `name: 'massimo-doc'` (nominal — the custom storage keys by the
+tab's map, `docKey(tabMapId())`; see _A tab is a map_), `version: 30`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`, plus a **custom `merge` hook** (below). Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -1947,8 +1955,10 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
   day it is added, and no second list of homes can fall behind the first. A dangling ref is the
   quietest corruption in the doc: the color it painted stays put, the link evaporates on the next
   load, and the only symptom is a palette Reset/Sync that stops doing anything.
-- **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
-  boot, running `migrateDoc`.
+- **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates the tab's map's
+  working copy from localStorage on boot, running `migrateDoc`. A map with no working copy (a URL
+  opened fresh; a reload after a clean save) is fetched from the library by the toolbar's mount
+  effect instead (`openTabMapFromLibrary`, [mapTab.ts](src/state/mapTab.ts)).
 - **Load → JSON…**: `parse(text, libraryPalettes)` then `adoptParsedDoc()` (below). The library
   is consulted only to resolve a LEGACY file's `custom:` palette ids; a current file is
   self-describing.
@@ -2032,28 +2042,15 @@ via Map → Save version and Map → Load → From library…
   then the filter — so a filtered list keeps the chosen order. The selected map is looked up
   **before** the filter, so hiding its row never blanks the versions column beside it.
 - **The pointer lives outside both** ([libraryPointer.ts](src/state/libraryPointer.ts)).
-  `useLibraryPointer` holds `{ mapId, version }` — which library map the live doc belongs to, and
-  which version it **came from** (not a claim about the canvas now: edit after opening v32 and it
-  still reads v32 until the next save mints v33). Outside the **doc** because a downloaded file
+  `useLibraryPointer` holds `{ mapId, version }` — which library map this **tab** is on, and which
+  version its document **came from** (not a claim about the canvas now: edit after opening v32 and
+  it still reads v32 until the next save mints v33). Outside the **doc** because a downloaded file
   carries no id, so load-file → save-to-library forks a **new** map (as re-uploading a downloaded
   doc would) — and no `MapDoc` schema change. Outside **mapLibrary** because that module owns
   IndexedDB and knows nothing about React; this is a two-field pointer the toolbar re-renders on.
-  Both halves move together, keeping the two states that matter distinct: a fresh map (`mapId` set,
-  `version` null — nothing saved under it yet) vs. a loaded JSON file (both null — not a library
-  map at all).
-- **Persisted as JSON** under `localStorage['massimo-library-pointer']` (zustand `persist`). #265's
-  bare string under `massimo-library-current` is **adopted once on boot, then the key is removed** —
-  so an afternoon's saves don't fork a new map the first time this build runs, and it can only
-  happen once. The adopted `version` is left null on purpose: nothing recorded which version that
-  doc came from, and a guess would put a wrong number in the toolbar. JSON also retires the old
-  `setItem(k, null)` trap (it stored the *string* `"null"` — truthy, and it survived `??`); with a
-  JSON codec that is structurally impossible.
-  - **Write the id through, THEN retire the key** — the order is load-bearing. `persist` writes on a
-    *change* and skips the initial state when storage is empty, so an id adopted into the initial
-    state lives in memory and nowhere else; retire the key beside it and one reload with nothing
-    saved in between loses the map. The write is guarded on the adopted id having actually won the
-    merge, so a real persisted pointer is never clobbered by a legacy key that outlived it. The
-    failure needs a *reload* to show, so it hides from any test that only checks the boot.
+  `mapId` is never null — a tab is always on some map, its id in the URL — so a fresh map and a
+  loaded file look alike: an id, and `version` null until the first save. How the id gets there,
+  and what it keys, is _A tab is a map_ below.
 - **The pill** ([MapVersionPill.tsx](src/components/MapVersionPill.tsx)) renders the pointer's
   `version` as a grey `.map-version-pill` beside the map name — and **shows nothing** when it is
   null: not "v0", not an empty pill. A pill showing a number the library cannot resolve is worse
@@ -2091,12 +2088,16 @@ Load-bearing details:
 - **`markSaved`/`markAdopted` take `(json, snap)` captured together, BEFORE any await** — an edit
   landing while a save is in flight is not vouched for, and the doc stays dirty.
 - **The baseline survives a refresh by hash.** `markSaved`/`markAdopted` persist
-  `{hash(json), backed}` under `localStorage['massimo-save-baseline']`; on boot the rehydrated doc
-  is re-serialized and compared (`bootBaselineState`). Match → baseline restored (blue survives a
-  refresh too); mismatch → unset, which reads dirty — the erring direction that keeps data. The
-  bytes themselves are not persisted (svg images carry data URIs; doubling the doc's footprint).
-  With nothing recorded at all, an **empty** doc adopts itself as unsaved (a first boot shows the
-  same blue a virgin New does), a non-empty one errs dirty.
+  `{hash(json), backed}` under the tab's map (`massimo-baseline:<id>`); on boot the rehydrated doc
+  is re-serialized and compared (`bootBaselineState`; `rebootBaseline` runs the same for a tab that
+  has just become another map). Match → baseline restored (blue survives a refresh too); mismatch →
+  unset, which reads dirty — the erring direction that keeps data. The bytes themselves are not
+  persisted (svg images carry data URIs; doubling the doc's footprint). With nothing recorded at
+  all, an **empty** doc adopts itself as unsaved (a first boot shows the same blue a virgin New
+  does), a non-empty one errs dirty.
+- **`markSaved` releases the map's working copy** (the doc store's slot) when the live doc still IS
+  the snapshot it vouches for — the library holds those bytes now. An edit that landed during the
+  save's awaits keeps the slot: it is that edit's only home. See _A tab is a map_.
 - **A dirty reload recovers its Revert target from the library** (`bootRecovery`). A hash mismatch
   with a recorded `backed: true` means the baseline's bytes went down with the refresh but still
   exist as the library version the pointer names: fetch that payload, rebuild `(json, snap)` the
@@ -2113,17 +2114,76 @@ Load-bearing details:
   the saved baseline and the dot stays quiet. Without the flush, edit → undo → refresh would
   resurrect the edit from `localStorage` and read dirty.
 
-### Document switches: `adoptParsedDoc` + `autoSaveCurrent` ([Toolbar.tsx](src/components/Toolbar.tsx))
+### A tab is a map ([mapKeys.ts](src/state/mapKeys.ts), [libraryPointer.ts](src/state/libraryPointer.ts), [mapLock.ts](src/state/mapLock.ts), [mapTab.ts](src/state/mapTab.ts))
+
+The Google Docs model: a browser tab is ON one library map, named in the URL fragment
+(`#map=<id>`), and every piece of per-tab state is keyed by that id in localStorage — the working
+copy (`massimo-doc:<id>`), the save-baseline record (`massimo-baseline:<id>`), the camera
+(`massimo-camera:<id>`), and the version the copy came from (`massimo-pointer:<id>`). Two tabs on
+two maps share nothing; a reload, a bookmark, or a middle-click on the library dialog's per-row link
+comes back to the same map. (One app-wide slot was the corruption this replaced: two tabs each
+wrote their own half of it, and the next boot assembled map A's document with map B's pointer, so a
+save wrote A's bytes into B's history.)
+
+- **`useLibraryPointer` is the tab's identity.** `mapId` is never null — a bare URL mints one
+  (`bootedWithoutMap`, which main.tsx answers with the library dialog open over an empty canvas),
+  a loaded file gets one — and every per-map storage adapter keys by `tabMapId()`, a module
+  variable kept in step by subscription (the pointer's own adapter runs before the store exists to
+  be read). `version` is the version the document came FROM, persisted per map with **no id in
+  the blob**: the id is the key, so a blob can never point another map elsewhere. The subscription
+  also writes the URL with `replaceState`; a `hashchange` (the user's back button or address bar)
+  reloads the tab as whatever the URL now names.
+- **A working copy exists only for work the library does not hold.** The doc store writes its slot
+  on every edit; `markSaved` deletes it when the live doc still IS the snapshot just saved (an edit
+  that landed mid-save keeps it — the slot is that edit's only home), and `becomeMap` deletes the
+  outgoing map's unless it reads dirty. So the slots in use are bounded by unsaved work rather than
+  by how many maps this browser has opened (one map alone can be 5 MB against an origin quota of
+  5–10 MB); the library dialog marks a map that has one "unsaved changes"; and a map with none
+  boots from the library — `openTabMapFromLibrary`, run from the toolbar's mount effect (single-
+  flight per map, since StrictMode runs the effect twice): the pointer's version if it names one,
+  else the newest, the canvas empty while the read is out — and an edit that lands while the read
+  is out wins, since it wrote a working copy. The invariant the other way: a live doc that is not
+  `clean` always HAS a working copy. `retargetTab` writes one for the doc it carries
+  (`writeDocDraftNow`), because a clean doc's slot was released and its new identity has no library
+  row to boot from. A copy whose map has **no row** — a New drawn and closed on — is reachable from
+  nowhere else, so the dialog lists it as an "unsaved draft" to open (`listDocDrafts`), and deleting
+  a map sweeps its slots (`removeMapKeys`) rather than orphaning them.
+- **One editing window per map.** A tab takes the map's Web Lock (`massimo-map:<id>`) before it
+  mounts and on every switch; a second tab on the same URL gets a plain busy page from main.tsx
+  and reloads into the editor when the first lets go (`whenMapLockFree`). Opening a version of a
+  map another window holds rejects with `MAP_BUSY`, for the dialog to show. jsdom has no API and
+  runs unlocked.
+- **Every change of WHICH map goes through mapTab.ts, in one order:** take the incoming lock,
+  flush any debounced doc write still pending for the outgoing map (its key was resolved when it
+  was queued, so landing later would put the slot back), drop the outgoing working copy, release
+  the outgoing lock, move the pointer — and only THEN write the document, because the adapters
+  key by the pointer and the incoming doc's first write must land in its own slot. `becomeMap` (New, a file, opening a version) is the plain switch;
+  `retargetTab` is the same document under a new identity (Make a copy, and the dialog deleting
+  the map under the live doc), moving the working copy and camera along; `switchTabToMap` becomes
+  a map AND comes up on it — its working copy through the doc store's own hydrate path (migrate +
+  merge, then `clearHistory`, the camera store's rehydrate, `rebootBaseline`), else its library
+  version. Opening a version of a map that still has a working copy — unsaved work from a window
+  since closed — takes that last path and says so in a toast, rather than writing the version over
+  the only copy of the work.
+- **The first boot of this build adopts the one-slot layout** (`adoptLegacyStorage`): the
+  `vignelli-map-doc-v1` doc, `massimo-library-pointer`, `massimo-save-baseline` and the camera half
+  of `massimo-viewport` move under the id the old pointer named (a file's doc gets a minted one),
+  the legacy keys are removed, and the tab becomes that map whatever its URL says — the document
+  belongs to that map and must not be stranded behind a bookmark. Once.
+
+### Document switches: `adoptParsedDoc` ([mapTab.ts](src/state/mapTab.ts)) + `autoSaveCurrent` ([Toolbar.tsx](src/components/Toolbar.tsx))
 
 Every path that replaces the live document — **New**, Load → JSON…, Load → From library — goes
-through both, so none can drift:
+through both, so none can drift: auto-save the outgoing doc, become the incoming map (above), adopt
+the incoming doc.
 
 - `adoptParsedDoc(doc, backed)`: selection resets → `loadDoc(doc)` → `clearHistory()` (which
   cancels any open history group _and_ wipes both stacks — undo must not splice two different
   documents, deliberately more than a bare `temporal.clear()`) → `fitCameraToDoc(doc)` falling
   back to the origin whenever the fit declines → anchor the save baseline to the **post-load store
   state** (`markSaved` when the bytes came from the library, `markAdopted` for a file or New — the
-  difference between starting clean and starting unsaved-but-armed).
+  difference between starting clean and starting unsaved-but-armed). Also the boot-from-library
+  path's adoption.
 - `autoSaveCurrent()`: writes an `'auto'` version first. **Nothing that replaces the document may
   lose it.** It **throws** on storage failure and every caller aborts its switch — the auto-save is
   the whole backstop for New, which is not undoable.
@@ -2133,18 +2193,18 @@ through both, so none can drift:
     lines deliberately, so a map whose work is entirely lines would read as empty, write nothing,
     and be wiped. Three clicks away (Add line ×2, Esc).
   - The dedup gate compares against the **retained baseline bytes** (`baselineJson`, saveBaseline.ts),
-    not a DB read: id-keyed dedup is structurally inapplicable on the file-load path, which nulls
-    the id. The byte compare deliberately ignores `backed` — an unedited loaded *file* is skipped
-    ("browsing files deposits nothing"; the doc is safe on disk) even though it reads `unsaved`.
+    not a DB read: a loaded file's id has no library row to read. The byte compare deliberately
+    ignores `backed` — an unedited loaded *file* is skipped ("browsing files deposits nothing";
+    the doc is safe on disk) even though it reads `unsaved`.
   - **A delete in the library nulls that baseline** (`markUnbacked`, called by the dialog), or the
     gate vouches for bytes that no longer exist and New — which is not undoable and clears
     history — wipes a document that is then in no file, no library row and no undo stack. It fires
     on **two** paths: deleting the live doc's map, and deleting the one *version* it came from
     (where the pointer deliberately does not move at all, so nothing else marks the loss). Nulling
-    is a signal, not an inference: a cleared pointer looks identical to opening a JSON file, and
-    *that* document is safe on disk. Pinned by an e2e test, because the delete happens in the
-    dialog and the auto-save in the Toolbar — only the real pair over real IndexedDB proves they
-    agree.
+    is a signal, not an inference: the fresh identity the dialog gives the live doc
+    (`retargetTab`) looks identical to opening a JSON file, and *that* document is safe on disk.
+    Pinned by an e2e test, because the delete happens in the dialog and the auto-save in the
+    Toolbar — only the real pair over real IndexedDB proves they agree.
   - `onOpenVersion` reads and parses the payload **before** the auto-save, as the file-load path
     does. The auto-save writes an `'auto'` under the same map and prunes in the same transaction,
     and a well-used map sits at *exactly* `AUTO_VERSION_LIMIT` prunable autos — so the 51st prunes
@@ -2152,11 +2212,14 @@ through both, so none can drift:
     first puts the bytes in hand before the prune can take them.
   - It deliberately does **not** move the pointer — it runs while a document is on its way *out*,
     and the map it writes keeps its history and stays reachable from the dialog, which is the whole
-    job. Each caller then points at whatever is coming *in*: **New** → `(newMapId(), null)` (an id
-    to save under, nothing saved yet), Load → JSON… → `(null, null)`, Load → From library → the
-    opened row's `(mapId, version)`. **Save version** is not a switch: it sets
-    `(id, saved.version)` itself and re-anchors the baseline (`markSaved`) — and it is **greyed
-    out while the doc is `clean`**, so an unchanged doc can never mint a duplicate version.
+    job. Each caller then becomes whatever is coming *in* (`becomeMap`): **New** and Load → JSON…
+    → `newMapId()` (an id to save under and to be, nothing saved yet — the pill stays blank),
+    Load → From library → the opened row's map, then `(mapId, version)`. **Make a copy** and the
+    dialog's delete-under-the-live-doc use `retargetTab` instead (the document stays). **Save
+    version** is not a switch: it sets `(id, saved.version)` itself and re-anchors the baseline
+    (`markSaved`) — and it is **greyed out while the doc is `clean`**, so an unchanged doc can never
+    mint a duplicate version. Make a copy checkpoints only a source that HAS a version — a file or
+    an unsaved New has no history to update, and the copy preserves the bytes.
 - **Clear** is the exception: it stays in the *same* document, so it neither auto-saves nor clears
   history (Ctrl+Z is the backstop), and `clearAll` preserves everything that isn't drawn content:
   name / styles / styleDefaults / palettes / **darkMode** (a night map stays a night map
@@ -2444,8 +2507,11 @@ on any mode exit.
   map, light/dark pin it). The map's own day/night is **not** here — that is `MapDoc.darkMode` (a
   stale `darkMode` key in an existing persisted blob is ignored); both preferences are orthogonal
   to it, so `App` drives `data-theme` off `chromeIsDark(interfaceTheme, darkMode)` and `theme.ts`
-  resolves the paper from `(darkMode, canvasColor)`. **Persisted** as
-  `'massimo-viewport'` (per-browser, **not** per-file) — except `showNetwork`, alone among the
+  resolves the paper from `(darkMode, canvasColor)`. **Persisted** by a custom storage that splits
+  the blob: the camera (`x`/`y`/`zoom`) under the tab's map (`massimo-camera:<id>` — where you
+  left off is a property of the map, and two tabs on two maps must not pan each other), the rest
+  under `'massimo-viewport'` (per-browser, **not** per-file; a camera left in that blob by a
+  browser that predates the split is dropped on read) — except `showNetwork`, alone among the
   visibility flags, which `partialize` deliberately omits so a reload never opens onto an
   apparently-empty map. It is the broad one; the narrow toggles each clear a single kind, so a
   reload under them still shows a recognisable map. The store's `merge` hook is zustand's own
@@ -5064,7 +5130,9 @@ Each is confirmed in source/tests; file pointers included.
   (`e2e:prod` = `E2E_PREVIEW=1` → `vite preview` over dist/); plain `npm run e2e` drives the dev
   server so a spec can be iterated on without a build. Every test boots the app exactly ONCE:
   `openWithRawDoc` primes the origin on the static `public/e2e-blank.html`, writes the doc +
-  camera into localStorage, then loads the app — and no spec carries a goto/cleanup `beforeEach`,
+  camera into a map's localStorage slots (`massimo-doc:e2e-map` and its camera — `E2E_MAP_ID`;
+  a spec that needs a second MAP passes `mapId`), then loads the app on that map's URL
+  (`/#map=e2e-map`) — and no spec carries a goto/cleanup `beforeEach`,
   because each test's fresh BrowserContext already starts with empty storage (localStorage AND
   IndexedDB). `seedAndOpen` wraps it with the typed `Seed` shapes (fields omitted to simulate
   legacy saves) — **this is the only place the rehydrate/migrate path is exercised**. Specs drive

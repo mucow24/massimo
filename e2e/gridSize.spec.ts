@@ -15,7 +15,7 @@ async function stationWorldPos(page: Page, id: string): Promise<{ x: number; y: 
 
 async function readPolygonVertices(page: Page, id: string): Promise<{ x: number; y: number }[]> {
   return await page.evaluate((pid) => {
-    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    const raw = localStorage.getItem('massimo-doc:e2e-map');
     if (!raw) return [];
     return (JSON.parse(raw).state.polygons?.[pid]?.vertices ?? []) as { x: number; y: number }[];
   }, id);
@@ -28,9 +28,9 @@ const loneStation: Seed = {
   lines: [{ id: 'LB', service: 'B', color: '#A00033', stations: ['B'] }],
 };
 
-// Every test starts from default snap prefs (line on, grid off): each gets a
-// fresh BrowserContext. The grid SIZE lives in massimo-viewport, which
-// seedAndOpen rewrites without a gridSize each run → defaults back to 10px.
+// Every test starts from default snap prefs (line on, grid off) and the
+// default grid SIZE (massimo-viewport, which seedAndOpen never writes): each
+// gets a fresh BrowserContext.
 test.describe('grid size toggle', () => {
   test('button cycles 10 → 20 → 5 and persists across reload', async ({ page }) => {
     await seedAndOpen(page, loneStation);
