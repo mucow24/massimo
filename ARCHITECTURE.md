@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `47946a2` (2026-09-02, #562) — verified against the live source.** This
+**Up to date as of commit `612525d` (2026-09-03, #564) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -151,7 +151,9 @@ src/
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     lineCurve.ts                # per-line corner radius resolution (the fillet the router turns by)
     lineCircle.ts               # line-circle radius floor + canonicalizer, and the quarter-grid
-                                #   snap its DRAG/placement gestures (not its field) go through
+                                #   snap its DRAG/placement gestures (not its field) go through;
+                                #   also `stationsOnCircles` — the stations a moving ring carries,
+                                #   the one owner of that partition (see Line circles)
     lineEnd.ts                  # line END style resolution (line default → per-end pin) + the round→short degrade
     stopMetrics.ts              # stopMetricsOf: the production StopMetrics lookup — everything the
                                 #   label geometry knows about one PAINTED stop, resolved through the
@@ -2624,14 +2626,17 @@ Six seams cover it, and a seventh rule governs anything new:
   to stations that aren't on screen. `hitsForRect` is the marquee's single gate — one function for
   both the per-frame preview and the commit on release, which ran as two copies of the same seven
   calls (a gate the preview honours and the commit does not looks right for the whole drag and
-  selects the invisible thing anyway). It folds in `stationsForRectVisible` and
-  `anchorsForRectVisible`. The snap side has three named gates: `liveAlignTargets` (the
-  point-snapper pool, wrapping the still-pure `alignTargets`, emptying the four free kinds exactly
-  as the canvas does), `liveSnapStations` (the station record handed to the snap **engine** — a
-  bound route bullet stays draggable while the network is hidden, and without this it would align
-  to invisible stops), `liveSnapAnchors` (free anchors, gated on `showNetwork` **and**
-  `showAnchors`), and `liveSnapHostedAnchors` (the same anchor gate over the cells a station
-  carries — it empties those, leaving the station's stops in the pool).
+  selects the invisible thing anyway). WHICH row gates which pool it does not spell out: it reads
+  `visibleSelectionKinds` (below), so the marquee and the selection-wide gestures cannot end up
+  with different opinions about a layer, and a kind wired to the wrong row fails a test that walks
+  every gated pool rather than surfacing as a band that quietly grabs the wrong thing. The snap
+  side has three named gates: `liveAlignTargets` (the point-snapper pool, wrapping the still-pure
+  `alignTargets`, emptying the four free kinds exactly as the canvas does), `liveSnapStations` (the
+  station record handed to the snap **engine** — a bound route bullet stays draggable while the
+  network is hidden, and without this it would align to invisible stops), `liveSnapAnchors` (free
+  anchors, gated on `showNetwork` **and** `showAnchors`), and `liveSnapHostedAnchors` (the same
+  anchor gate over the cells a station carries — it empties those, leaving the station's stops in
+  the pool).
   Ring capture is the third: `liveCaptureCircles` gates the placement snap, its drop-side
   `bindDroppedStation`, and the drag-side capture in `useStationDrag`. Ungated, a station dropped
   near a hidden rim snaps onto it AND gets **bound** to it — the map acquires a binding to a guide
@@ -2647,7 +2652,9 @@ Six seams cover it, and a seventh rule governs anything new:
   by pool the way the marquee and the snappers do — there is no pool, only a selection — so they
   gate kind by kind, off one table: `visibleSelectionKinds` (visibility.ts) resolves every
   selectable kind's row in one pass, `stations` reading `showNetwork` straight because they nest
-  under the master switch and have no box of their own. `unlockedSelectedItemIds` (selectionOps.ts)
+  under the master switch and have no box of their own. The table is not theirs alone — the
+  marquee resolves its pools through it too — so the kind↔row pairing exists once for every
+  consumer that has an opinion about a selectable layer. `unlockedSelectedItemIds` (selectionOps.ts)
   layers LOCK on top of it, so every gesture reading it skips members on a switched-off layer: the
   Delete key, arrow-nudge, Ctrl+X and the group panel's Delete all. Without it, hiding Polygons and
   pressing Delete removed one with nothing on screen to show a selection ever existed. The group
@@ -3863,11 +3870,16 @@ center (`moveLineCircle`), which carries the stations bound to it — so those p
 `carriedStations` (ids only, every station on a moving ring, selected or not) instead of
 `stations`: they are excluded from the snap pools via `movingStationIds`, because they move, but
 never translated, because a bound station's `moveStation` reseats it on its ring and the second
-write would drift it round the rim. Same reason as `rotateItemsAround`'s `carriedByCircle`. The
-mirror case lives in `useStationDrag`: grabbing a bound station whose ring is co-selected (`ringTowed`)
-suspends the ring constraint entirely — no slide along the rim, no Shift/out-of-band detach — and
-skips the station's own `moveStation`, because the towed ring is what carries it. A LOCKED ring
-stays put, so its passengers tow normally and slide along the stationary rim.
+write would drift it round the rim. Which stations those are is one rule with one owner,
+`stationsOnCircles` ([model/lineCircle.ts](src/model/lineCircle.ts)): the three gestures that move
+rings each partition their station loop by it — this tow, the arrow nudge (via
+`stationsCarriedByCircles`, selectionOps.ts) and `rotateItemsAround`'s `carriedByCircle` — and
+lock and selection have no say in any of them, because `moveLineCircle` carries every passenger
+either way. The mirror case lives in `useStationDrag`: grabbing a bound station whose ring is
+co-selected (`ringTowed`) suspends the ring constraint entirely — no slide along the rim, no
+Shift/out-of-band detach — and skips the station's own `moveStation`, because the towed ring is
+what carries it. A LOCKED ring stays put, so its passengers tow normally and slide along the
+stationary rim.
 A ring's rim and centre handle BOTH select at pointer-down (its own convention, so the resize knob
 and the diameter popover appear as you grab it) — which must stand down for a ring already in the
 selection, or a `selectLineCircle` that clears every other list would destroy the group drag

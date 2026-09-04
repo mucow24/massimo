@@ -1,5 +1,9 @@
 import { autoOrientNewStation, uprightTangentRotation } from './autoOrient';
-import { LINE_CIRCLE_RADIUS_DEFAULT, canonicalLineCircleRadius } from './lineCircle';
+import {
+  LINE_CIRCLE_RADIUS_DEFAULT,
+  canonicalLineCircleRadius,
+  stationsOnCircles,
+} from './lineCircle';
 import {
   circleAngleAt,
   pointAtAngle,
@@ -1670,13 +1674,12 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
   // rotates them (keeping them ON their ring), so the station branch must leave
   // them alone. Without this a station that is BOTH a member and a ring
   // passenger would be rotated twice — 90° instead of 45°.
-  const carriedByCircle = new Set<string>();
-  for (const m of members) {
-    if (m.type !== 'lineCircle') continue;
-    for (const sid of Object.keys(doc.stations)) {
-      if (doc.stations[sid].circleId === m.id) carriedByCircle.add(sid);
-    }
-  }
+  // Through the shared rule (lineCircle.ts), which the arrow nudge and the
+  // drag tow read too — one walk of the stations rather than one per member.
+  const carriedByCircle = stationsOnCircles(
+    doc.stations,
+    members.filter((m) => m.type === 'lineCircle').map((m) => m.id),
+  );
 
   // Where a member's position lands: orbited one step about the pivot, or held
   // exactly where it is when the member IS the pivot. Held rather than

@@ -8,6 +8,8 @@ import {
   makeLine,
   makeLineCircle,
   makePolygon,
+  makeRouteBullet,
+  makeSvgImage,
   makeTextLabel,
   stationWithStop,
 } from '../../test/fixtures';
@@ -374,9 +376,11 @@ describe('useRectSelect — a hidden KIND stays out of the marquee', () => {
           ],
         }),
       },
-      backgroundOrder: ['p1'],
+      backgroundOrder: ['p1', 'i1'],
       textLabels: { g1: makeTextLabel({ id: 'g1', x: 60, y: 60 }) },
       lineCircles: { c1: makeLineCircle({ id: 'c1', x: 60, y: 60, radius: 30 }) },
+      routeBullets: { b1: makeRouteBullet({ id: 'b1', x: 60, y: 60 }) },
+      svgImages: { i1: makeSvgImage({ id: 'i1', x: 10, y: 10 }) },
     });
   });
 
@@ -385,40 +389,49 @@ describe('useRectSelect — a hidden KIND stays out of the marquee', () => {
     move(result, pointerEvent({ clientX: 150, clientY: 150 }));
   };
 
+  // Every marquee pool that answers to a View-menu row of its own, with the id
+  // seeded above and the preview field that reports it. This IS the kind→row
+  // pairing `visibleSelectionKinds` owns, put to the marquee one kind at a
+  // time: a pool wired to the wrong row — hiding Polygons taking the labels
+  // out, a new kind gated by whichever row was copied last — passes a
+  // one-kind-at-a-time spot check and fails here.
+  //
+  // (Stations and free anchors have their own blocks above: neither has a row
+  // of its own, so each carries an extra rule — stations ride `showNetwork`,
+  // anchors nest under it.)
+  const GATED = [
+    ['showPolygons', 'previewPolygonIds', 'p1'],
+    ['showTextLabels', 'previewLabelIds', 'g1'],
+    ['showLineCircles', 'previewLineCircleIds', 'c1'],
+    ['showRouteBullets', 'previewBulletIds', 'b1'],
+    ['showSvgImages', 'previewSvgImageIds', 'i1'],
+  ] as const;
+
   it('grabs every kind when all are shown (baseline)', () => {
     const { result, ref } = render();
     band(result, ref);
-    expect(result.current.previewPolygonIds).toContain('p1');
-    expect(result.current.previewLabelIds).toContain('g1');
-    expect(result.current.previewLineCircleIds).toContain('c1');
+    for (const [, field, id] of GATED) expect(result.current[field], field).toContain(id);
   });
 
-  it('leaves a hidden polygon out, on both the preview and the commit', () => {
+  it.each(GATED)('hiding %s takes %s out and leaves every other kind in', (flag, field, id) => {
+    useViewportStore.setState({ [flag]: false });
+    const { result, ref } = render();
+    band(result, ref);
+    expect(result.current[field], id).toEqual([]);
+    for (const [, other, otherId] of GATED) {
+      if (other !== field) expect(result.current[other], other).toContain(otherId);
+    }
+  });
+
+  it('leaves a hidden polygon out on the COMMIT too, not only the preview', () => {
     useViewportStore.setState({ showPolygons: false });
     const { result, ref } = render();
     band(result, ref);
-    expect(result.current.previewPolygonIds).toEqual([]);
     // The commit path builds its own hit lists — a gate applied only to the
     // preview would look right mid-drag and select the invisible thing anyway.
     up(result, pointerEvent({ clientX: 150, clientY: 150 }));
     expect(useSelection.getState().selectedPolygonIds).toEqual([]);
     expect(useSelection.getState().selectedLabelIds).toContain('g1');
-  });
-
-  it('leaves a hidden canvas label out', () => {
-    useViewportStore.setState({ showTextLabels: false });
-    const { result, ref } = render();
-    band(result, ref);
-    expect(result.current.previewLabelIds).toEqual([]);
-    expect(result.current.previewPolygonIds).toContain('p1');
-  });
-
-  it('leaves a hidden line circle out', () => {
-    useViewportStore.setState({ showLineCircles: false });
-    const { result, ref } = render();
-    band(result, ref);
-    expect(result.current.previewLineCircleIds).toEqual([]);
-    expect(result.current.previewPolygonIds).toContain('p1');
   });
 });
 
