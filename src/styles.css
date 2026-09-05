@@ -3042,9 +3042,13 @@ button.dialog-sort {
   border-bottom: 1px solid var(--border-soft);
 }
 /* The map column's rows are also a choice — they drive the column beside them,
-   so unlike every other row in these dialogs they hover and hold a selection. */
+   so unlike every other row in these dialogs they hover and hold a selection.
+   A double-click opens the map, so the row's text must not light up as a
+   word selection on the way (the rename field inside stays selectable — form
+   controls own their own selection). */
 .map-row {
   cursor: pointer;
+  user-select: none;
   transition: background-color 120ms ease;
 }
 .map-row:hover {
