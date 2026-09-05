@@ -249,6 +249,12 @@ export type SelectionKind = 'stations' | keyof typeof SELECTION_VISIBILITY_KEYS;
  * that is two lists to keep in step, which is what the header at the top of this
  * file says a registry is for.
  *
+ * The marquee (`hitsForRect`, useRectSelect.ts) reads it too. It DOES gate by
+ * pool — it has geometry — but the pairing of kind to row is the same pairing,
+ * and spelling it out there as well was the third copy: a band that grabs a
+ * hidden layer is how an invisible item most easily enters a selection in the
+ * first place.
+ *
  * `stations` reads `showNetwork` straight rather than through `kindVisibleNow`:
  * they nest under the master switch and have no box to check, exactly as
  * `stationsForRectVisible` spells it.

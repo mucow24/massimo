@@ -1,6 +1,5 @@
 import { RefObject, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
-import { useViewportStore } from '../../state/viewportStore';
 import { pointerLost, releaseDragCapture, trackDragMove } from './dragGesture';
 import {
   polygonsForRect,
@@ -11,41 +10,10 @@ import {
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { lineCirclesForRect } from '../../geometry/lineCircle';
-import { kindVisibleNow } from '../../state/visibility';
+import { visibleSelectionKinds } from '../../state/visibility';
 import { stopMetricsOf } from '../../model/stopMetrics';
 import type { MapDoc, StationId } from '../../model/types';
 import type { Pt } from '../../geometry/polygonUnion';
-
-/**
- * Stations swept up by the rect — none while the lines/stations toggle hides
- * them. Hits are geometric (straight off the doc), so hiding the network does
- * NOT take stations out of a marquee on its own: without this, a band thrown
- * around the background art the toggle just exposed would also select every
- * station it crossed, invisibly — and that selection answers Delete.
- */
-function stationsForRectVisible(
-  doc: Pick<MapDoc, 'stations' | 'lines' | 'transfers' | 'lineCircles'>,
-  rect: RectSelectRect,
-  includeLocked: boolean,
-): StationId[] {
-  if (!useViewportStore.getState().showNetwork) return [];
-  return stationsForRect(doc.stations, rect, doc.lineCircles, stopMetricsOf(doc), includeLocked);
-}
-
-/**
- * FREE transfer anchors swept up by the rect — none while either toggle that
- * hides them is off. Same rule and same reason as stationsForRectVisible: hits
- * are geometric, so an invisible anchor would otherwise join a selection that
- * answers Delete. Hiding stays a PEEK though — an already-selected anchor is
- * not deselected by the toggle, only kept out of NEW marquees.
- */
-function anchorsForRectVisible(
-  doc: Pick<MapDoc, 'transferAnchors'>,
-  rect: RectSelectRect,
-): string[] {
-  if (!kindVisibleNow('showAnchors')) return [];
-  return transferAnchorsForRect(doc.transferAnchors, rect);
-}
 
 export interface RectSelectRect {
   x0: number;
@@ -79,36 +47,43 @@ interface RectHits {
  * ran as two copies of the same seven calls, which is two places for a gate to
  * be added to only one of — and a gate the preview honours but the commit does
  * not looks right for the whole drag and selects the invisible thing anyway.
+ *
+ * Which row gates which pool is NOT spelled out here: it is
+ * `visibleSelectionKinds` (visibility.ts), the same kind→row table the
+ * selection-wide gestures read, so the marquee and those gestures cannot
+ * acquire different opinions about a layer. It resolves each row through
+ * `kindVisibleNow`, so a kind its placing mode has REVEALED is on the canvas
+ * and a band can sweep it up; `stations` rides the master switch (no row of
+ * its own) and anchors nest under it.
  */
 function hitsForRect(
-  doc: Parameters<typeof stationsForRectVisible>[0] &
-    Pick<
-      MapDoc,
-      'routeBullets' | 'textLabels' | 'polygons' | 'svgImages' | 'transferAnchors' | 'lineCircles'
-    >,
+  doc: Pick<
+    MapDoc,
+    | 'stations'
+    | 'lines'
+    | 'transfers'
+    | 'lineCircles'
+    | 'routeBullets'
+    | 'textLabels'
+    | 'polygons'
+    | 'svgImages'
+    | 'transferAnchors'
+  >,
   rect: RectSelectRect,
   includeLocked: boolean,
 ): RectHits {
-  // Through `kindVisibleNow`, not the raw flags: a kind its placing mode has
-  // REVEALED is on the canvas, so a marquee has to be able to sweep it up.
+  const shows = visibleSelectionKinds();
   return {
-    stations: stationsForRectVisible(doc, rect, includeLocked),
-    bullets: kindVisibleNow('showRouteBullets')
-      ? routeBulletsForRect(doc.routeBullets, rect, includeLocked)
+    stations: shows.stations
+      ? stationsForRect(doc.stations, rect, doc.lineCircles, stopMetricsOf(doc), includeLocked)
       : [],
-    labels: kindVisibleNow('showTextLabels')
-      ? textLabelsForRect(doc.textLabels, rect, includeLocked)
-      : [],
-    polygons: kindVisibleNow('showPolygons')
-      ? polygonsForRect(doc.polygons, rect, includeLocked)
-      : [],
-    svgImages: kindVisibleNow('showSvgImages')
-      ? svgImagesForRect(doc.svgImages, rect, includeLocked)
-      : [],
-    anchors: anchorsForRectVisible(doc, rect),
-    lineCircles: kindVisibleNow('showLineCircles')
-      ? lineCirclesForRect(doc.lineCircles, rect, includeLocked)
-      : [],
+    bullets: shows.bullets ? routeBulletsForRect(doc.routeBullets, rect, includeLocked) : [],
+    labels: shows.labels ? textLabelsForRect(doc.textLabels, rect, includeLocked) : [],
+    polygons: shows.polygons ? polygonsForRect(doc.polygons, rect, includeLocked) : [],
+    svgImages: shows.svgImages ? svgImagesForRect(doc.svgImages, rect, includeLocked) : [],
+    // No lock pass: transfer anchors have no `locked` field (selectionOps.ts).
+    anchors: shows.anchors ? transferAnchorsForRect(doc.transferAnchors, rect) : [],
+    lineCircles: shows.lineCircles ? lineCirclesForRect(doc.lineCircles, rect, includeLocked) : [],
   };
 }
 

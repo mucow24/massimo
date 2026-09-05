@@ -1,4 +1,5 @@
 import { useDoc, useSelection } from '../../state/store';
+import { stationsOnCircles } from '../../model/lineCircle';
 import { visibleSelectionKinds } from '../../state/visibility';
 import { guideAlongOf, guideNudgeDelta } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
@@ -130,21 +131,18 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
     }
   }
   // Every station bound to a moving ring, SELECTED OR NOT: the ring takes its
-  // passengers with it either way, so selection has no say here. Lock has none
-  // either — `moveLineCircle` carries a locked passenger just the same.
-  if (movingCircleIds.size > 0) {
-    for (const id of Object.keys(doc.stations)) {
-      const cid = doc.stations[id].circleId;
-      if (cid !== undefined && movingCircleIds.has(cid)) out.carriedStations.push(id);
-    }
-  }
+  // passengers with it either way, so neither selection nor lock has a say.
+  // Through the shared rule (model/lineCircle.ts), which the keyboard nudge and
+  // the orbit read too.
+  const carried = stationsOnCircles(doc.stations, movingCircleIds);
+  out.carriedStations.push(...carried);
   for (const id of shows.stations ? sel.selectedStationIds : []) {
     if (grabbedKind === 'station' && id === grabbedId) continue;
     const s = doc.stations[id];
     if (!s) continue;
     // Already carried by its ring (above) — towing it as well would be the
     // second write that drifts it round the rim.
-    if (s.circleId !== undefined && movingCircleIds.has(s.circleId)) continue;
+    if (carried.has(id)) continue;
     // Locked stations never tow (mirrors locked polygons below).
     if (!s.locked) out.stations.push({ id, startX: s.x, startY: s.y });
   }

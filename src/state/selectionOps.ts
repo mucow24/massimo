@@ -1,3 +1,4 @@
+import { stationsOnCircles } from '../model/lineCircle';
 import type { LockableKind } from '../model/transforms';
 import type { StationId } from '../model/types';
 import { isHistoryGrouping } from './history';
@@ -115,24 +116,14 @@ export function visibleCopyableSelection(): ReturnType<typeof getCopyableSelecti
 }
 
 /**
- * The stations a set of MOVING line circles carries. `moveLineCircle` takes its
- * bound stations with it, so a gesture that translates a ring must not also
- * write those stations: `T.moveStation` RESEATS a ring-bound station onto its
- * circle rather than translating it, so the second write would slide it round a
- * rim that has already moved, and the group would visibly come apart. Neither
- * selection nor lock has a say — a ring carries every passenger either way.
- * The keyboard twin of groupDrag's `carriedStations`.
+ * The stations a set of MOVING line circles carries, over the live doc — the
+ * keyboard half's read of {@link stationsOnCircles}, which owns the rule and
+ * says why the partition exists. The drag tow (groupDrag's `carriedStations`)
+ * and the orbit (`rotateItemsAround`) reach the same function with their own
+ * station records.
  */
 export function stationsCarriedByCircles(circleIds: readonly string[]): ReadonlySet<string> {
-  const out = new Set<string>();
-  if (circleIds.length === 0) return out;
-  const moving = new Set(circleIds);
-  const { stations } = useDoc.getState();
-  for (const id of Object.keys(stations)) {
-    const cid = stations[id].circleId;
-    if (cid !== undefined && moving.has(cid)) out.add(id);
-  }
-  return out;
+  return stationsOnCircles(useDoc.getState().stations, circleIds);
 }
 
 /**
