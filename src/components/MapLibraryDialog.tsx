@@ -185,8 +185,10 @@ function RenameField({
       defaultValue={initial}
       placeholder={placeholder}
       onFocus={(e) => e.currentTarget.select()}
-      // A row click selects the map; a click INSIDE its own name field must not.
+      // A row click selects the map, and a double-click opens it; either INSIDE
+      // its own name field must not (a double-click here selects a word).
       onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
       onBlur={(e) => onCommit(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') onCommit(e.currentTarget.value);
@@ -202,7 +204,8 @@ function RenameField({
 /**
  * The library manager: maps on the left, the selected map's versions on the
  * right. Reached from Load → From library…, and the only place maps are renamed
- * or deleted — you never have to open a map to throw it away.
+ * or deleted — you never have to open a map to throw it away. A click on a map
+ * row shows its versions; a double-click opens the newest one outright.
  *
  * A Radix Dialog (portaled into `.app` so the design tokens reach it), which
  * owns Escape, outside-click, and the focus trap.
@@ -422,6 +425,29 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
     }
   };
 
+  /**
+   * A double-click on a map row opens its newest version straight away. Reads
+   * the list fresh rather than leaning on the column: the row's first click
+   * has only just started that read, and a quick second click beats
+   * IndexedDB. Newest means newest, not newest-visible — the star filter
+   * hides rows from the column, not from the map.
+   */
+  const onOpenNewest = async (map: MapSummary) => {
+    setError(null);
+    let rows: VersionMeta[];
+    try {
+      rows = await listVersions(map.id);
+    } catch {
+      setError('Could not read that map’s versions.');
+      return;
+    }
+    if (rows.length === 0) {
+      setError(`“${map.name}” has no versions to open.`);
+      return;
+    }
+    await onOpen(rows[0]);
+  };
+
   const onOpenDraftRow = async (mapId: string) => {
     setError(null);
     try {
@@ -564,6 +590,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
                       key={m.id}
                       className={'dialog-row map-row' + (m.id === selectedMapId ? ' selected' : '')}
                       onClick={() => selectMap(m.id)}
+                      onDoubleClick={() => void onOpenNewest(m)}
                     >
                       <Thumb src={m.thumb} />
                       <div className="dialog-row-body">
@@ -587,7 +614,14 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
                           )}
                         </span>
                       </div>
-                      <div className="dialog-row-actions" onClick={(e) => e.stopPropagation()}>
+                      {/* Two quick clicks on Delete arm and confirm it, and the
+                          browser synthesizes a dblclick on top — which must not
+                          bubble up and open the map just deleted. */}
+                      <div
+                        className="dialog-row-actions"
+                        onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      >
                         {/* A real link: the map's own URL, so a middle-click or a
                             bookmark works the way it does for any document. */}
                         <a

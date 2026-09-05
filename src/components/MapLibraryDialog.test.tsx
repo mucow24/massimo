@@ -191,6 +191,57 @@ describe('MapLibraryDialog', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  describe('double-clicking a map row', () => {
+    it('opens the map’s newest version through the caller', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await user.dblClick(await screen.findByText('Canal Line'));
+      await waitFor(() => expect(onOpenVersion).toHaveBeenCalledWith(V3));
+      expect(onOpenVersion).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the newest version even when the star filter hides it', async () => {
+      const user = userEvent.setup();
+      // V3 is newest and unstarred; the filtered column shows only V2.
+      useLibraryPrefs.setState({ starredVersionsOnly: true });
+      renderDialog();
+      await user.dblClick(await screen.findByText('Canal Line'));
+      await waitFor(() => expect(onOpenVersion).toHaveBeenCalledWith(V3));
+    });
+
+    it('reports a map with nothing to open inside the dialog', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listVersions).mockResolvedValue([]);
+      renderDialog();
+      await user.dblClick(await screen.findByText('Canal Line'));
+      expect(await screen.findByRole('alert')).toHaveTextContent('no versions');
+      expect(onOpenVersion).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
+
+    it('inside the rename field selects a word, it does not open the map', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.click(screen.getByRole('button', { name: 'Rename Canal Line' }));
+      await user.dblClick(screen.getByRole('textbox', { name: 'Rename Canal Line' }));
+      await settle();
+      expect(onOpenVersion).not.toHaveBeenCalled();
+    });
+
+    it('through Delete → Sure? deletes the map and does not also open it', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      // Two rapid clicks on the same spot arm and confirm the delete; the
+      // browser also synthesizes a dblclick there, which bubbles to the row.
+      await user.dblClick(screen.getByRole('button', { name: 'Delete Canal Line' }));
+      await waitFor(() => expect(deleteMap).toHaveBeenCalledWith('m1'));
+      await settle();
+      expect(onOpenVersion).not.toHaveBeenCalled();
+    });
+  });
+
   /**
    * Deletes are two-step in-row, not a modal. The "library still open" leg is
    * the one that matters: an earlier version of this test passed against the
