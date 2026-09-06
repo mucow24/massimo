@@ -222,8 +222,13 @@ export function kindVisibleNow(key: VisibilityKey): boolean {
  *
  * `stations` has no entry because it has no row of its own: it rides the master
  * lines/stations switch, which {@link visibleSelectionKinds} reads directly.
+ *
+ * Exported for the suite that pins the gestures against each other
+ * (selectionOps.test.ts): its cases are the pairs below rather than a
+ * hand-written list beside them, so a kind added here cannot be one the tests
+ * quietly stop covering — which is what left `lineCircles` unpinned.
  */
-const SELECTION_VISIBILITY_KEYS = {
+export const SELECTION_VISIBILITY_KEYS = {
   bullets: 'showRouteBullets',
   labels: 'showTextLabels',
   polygons: 'showPolygons',

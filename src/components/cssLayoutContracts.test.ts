@@ -38,17 +38,12 @@ describe('layout numbers TypeScript restates from styles.css', () => {
     ['PALETTE_ROW_HEIGHT', '.palette-row', 'height', PALETTE_ROW_HEIGHT],
   ];
 
+  // The parse is the load-bearing half — a selector that stopped matching (a
+  // rename, a rule split in two) reads `null`, and a contract nothing can find
+  // is a contract nothing is checking. `toBe` is what closes that door: it is
+  // strict, so `null` fails here exactly as a disagreeing number would, and no
+  // separate "did the parse find anything" case is needed.
   it.each(contracts)('%s equals %s { %s }', (_name, selector, prop, value) => {
     expect(cssPx(selector, prop)).toBe(value);
-  });
-
-  // The parse is the load-bearing half: a selector that stopped matching (a
-  // rename, a rule split in two) would read `null` and, compared loosely,
-  // could pass as "no disagreement". It reads a number or the contract above
-  // is not being checked at all.
-  it('actually found a number for every contract', () => {
-    expect(contracts.map(([, sel, prop]) => cssPx(sel, prop))).toEqual(
-      contracts.map(([, , , value]) => value),
-    );
   });
 });
