@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { stationsCarriedByCircles, unlockedSelectedItemIds } from './selectionOps';
+import {
+  stationsCarriedByCircles,
+  unlockedSelectedItemIds,
+  visibleCopyableSelection,
+} from './selectionOps';
 import { useDoc, useSelection } from './store';
 import { useViewportStore } from './viewportStore';
+import { SELECTION_VISIBILITY_KEYS } from './visibility';
 import { DEFAULT_DOC } from '../model/transforms';
 import { collectGroupSiblings } from '../components/canvas/groupDrag';
 import {
@@ -161,6 +166,11 @@ describe('the keyboard twin agrees with the drag half', () => {
 // gated on one side only looks right until the layer is hidden, and then a
 // Delete removes something with nothing on screen, or a tow leaves one member
 // standing where the rest of the group moved off.
+//
+// The cases come from `SELECTION_VISIBILITY_KEYS` itself rather than a list
+// written out beside it: a hand-written one is a list that falls behind, and
+// this one had — `lineCircles` was in the registry and in both halves, and in
+// no case here.
 describe('every selectable kind is gated identically on both halves', () => {
   // One selected item of each kind. Two stations because the drag grabs one and
   // `collectGroupSiblings` reports every OTHER selected item; the rings carry no
@@ -210,13 +220,14 @@ describe('every selectable kind is gated identically on both halves', () => {
   // Both halves reduced to the same shape: kind → the ids it would act on. The
   // drag half never reports the grabbed station, so the keyboard half drops it
   // too — the comparison is about the GATE, not about that exclusion.
+  const KINDS = ['stations', ...Object.keys(SELECTION_VISIBILITY_KEYS)];
+
   const kindIds = (): { keyboard: Record<string, string[]>; drag: Record<string, string[]> } => {
     const k = unlockedSelectedItemIds();
     const d = collectGroupSiblings('station', 'grab');
-    const kinds = ['stations', 'bullets', 'labels', 'polygons', 'svgImages', 'anchors', 'guides'];
     const pick = <T>(o: Record<string, T[]>, f: (v: T) => string) =>
       Object.fromEntries(
-        kinds.map((n) => [
+        KINDS.map((n) => [
           n,
           o[n]
             .map(f)
@@ -230,25 +241,51 @@ describe('every selectable kind is gated identically on both halves', () => {
     };
   };
 
-  const cases: readonly [string, keyof ReturnType<typeof kindIds>['keyboard'], string][] = [
-    ['showNetwork', 'stations', 's1'],
-    ['showRouteBullets', 'bullets', 'b1'],
-    ['showTextLabels', 'labels', 't1'],
-    ['showPolygons', 'polygons', 'p1'],
-    ['showSvgImages', 'svgImages', 'i1'],
-    ['showAnchors', 'anchors', 'a1'],
-    ['showGuides', 'guides', 'g1'],
-  ];
+  // kind → [the View-menu flag that gates it, the seeded item's id]. The flags
+  // come from the registry, so a kind added there arrives here without an edit;
+  // only the seeded id is local. `stations` is spelled out because it has no
+  // registry row — it rides the master switch.
+  const SEEDED: Record<string, string> = {
+    stations: 's1',
+    bullets: 'b1',
+    labels: 't1',
+    polygons: 'p1',
+    svgImages: 'i1',
+    anchors: 'a1',
+    lineCircles: 'c9',
+    guides: 'g1',
+  };
+  const cases: readonly [string, string, string][] = KINDS.map((kind) => [
+    kind === 'stations'
+      ? 'showNetwork'
+      : SELECTION_VISIBILITY_KEYS[kind as keyof typeof SELECTION_VISIBILITY_KEYS],
+    kind,
+    SEEDED[kind],
+  ]);
+
+  /**
+   * The THIRD gesture on the same table: Ctrl+D's read
+   * (`visibleCopyableSelection`). It covers only the four copyable kinds —
+   * stations have no clipboard payload, and anchors, rings and guides have no
+   * popover to paste into — so it is asserted over those and no others.
+   */
+  const copyableIds = (): Record<string, string[]> => visibleCopyableSelection();
+  const COPYABLE = Object.keys(copyableIds());
 
   beforeEach(seedAll);
+
+  it('every registry kind is seeded, so no case asserts against undefined', () => {
+    expect(KINDS.filter((k) => SEEDED[k] === undefined)).toEqual([]);
+  });
 
   it('shows every kind with every layer on', () => {
     const { keyboard, drag } = kindIds();
     for (const [, kind, id] of cases) expect(keyboard[kind]).toEqual([id]);
     expect(keyboard).toEqual(drag);
+    for (const kind of COPYABLE) expect(copyableIds()[kind]).toEqual([SEEDED[kind]]);
   });
 
-  it.each(cases)('hiding %s empties %s on both halves, and nothing else', (flag, kind) => {
+  it.each(cases)('hiding %s empties %s on every half, and nothing else', (flag, kind) => {
     useViewportStore.setState({ [flag]: false });
     const { keyboard, drag } = kindIds();
     expect(keyboard[kind]).toEqual([]);
@@ -259,6 +296,14 @@ describe('every selectable kind is gated identically on both halves', () => {
     const alsoGone = flag === 'showNetwork' ? [kind, 'anchors'] : [kind];
     for (const [, other, id] of cases) {
       if (!alsoGone.includes(other)) expect(keyboard[other]).toEqual([id]);
+    }
+    // Duplicate reads the same table, so a copyable kind must go with it and
+    // the other three must stay — the half that had one of its four covered.
+    const copyable = copyableIds();
+    for (const other of COPYABLE) {
+      expect(copyable[other], `${other} after hiding ${flag}`).toEqual(
+        alsoGone.includes(other) ? [] : [SEEDED[other]],
+      );
     }
   });
 });
