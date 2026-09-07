@@ -8,6 +8,7 @@ import {
   snapNeighborTag,
   anchorFromArcLen,
   arcLenFromAnchor,
+  lineTagDropAt,
 } from './lineTagGeometry';
 import { Vec2 } from './vec';
 import { makeLine } from '../test/fixtures';
@@ -582,5 +583,68 @@ describe('anchor <-> arc-length conversion', () => {
       const { anchorEnd, distance } = anchorFromArcLen(arcLen, total);
       expect(arcLenFromAnchor(anchorEnd, distance, total)).toBeCloseTo(arcLen, 9);
     }
+  });
+});
+
+/**
+ * The placement resolution the add-line-tag hover ghost and the click that
+ * commits both run through. They used to derive it twice, side by side, so a
+ * rule added to one would have moved the preview off the tag it promised.
+ */
+describe('lineTagDropAt', () => {
+  // A two-stripe band on a straight 100-unit centerline: L1 rides the
+  // centerline, L2 sits 12 units off it.
+  const spec = {
+    pairKey: 's1|s2',
+    lines: [{ id: 'L1' }, { id: 'L2' }],
+    stripeOffsets: [0, 12],
+    centerline: [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ],
+    radius: 24,
+  };
+
+  it('names the stripe, the parameter along it, and the corridor ends', () => {
+    const drop = lineTagDropAt(spec, 'L2', { x: 30, y: 12 }, {}, null);
+    expect(drop).not.toBeNull();
+    expect(drop!.offset).toBe(12);
+    expect(drop!.t).toBeCloseTo(0.3, 6);
+    expect(drop!.fromCanon).toBe('s1');
+    expect(drop!.toCanon).toBe('s2');
+  });
+
+  it('measures against the pointed stripe, not the centerline', () => {
+    // The same world point read as L1's stripe (offset 0) and as L2's (offset
+    // 12). A resolution that ignored the offset would return one answer for
+    // both — and drop the tag on a stripe the ghost never showed.
+    const onL1 = lineTagDropAt(spec, 'L1', { x: 30, y: 6 }, {}, null);
+    const onL2 = lineTagDropAt(spec, 'L2', { x: 30, y: 6 }, {}, null);
+    expect(onL1!.offset).toBe(0);
+    expect(onL2!.offset).toBe(12);
+  });
+
+  it('applies the neighbor snap, and null tolerance bypasses it (the Shift half)', () => {
+    // A neighbor on L1's stripe at arc-length 30; the pointer lands just past
+    // it, inside the engage radius.
+    const neighbor: LineTag = {
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 30,
+      orientation: 0,
+    };
+    const world = { x: 30.5, y: 0 };
+    expect(lineTagDropAt(spec, 'L1', world, { t1: neighbor }, 10)!.t).toBeCloseTo(0.3, 6);
+    expect(lineTagDropAt(spec, 'L1', world, { t1: neighbor }, null)!.t).toBeCloseTo(0.305, 6);
+  });
+
+  it('is null for a line with no stripe in this band', () => {
+    // Not merely defensive: `stripeOffsets` has one entry per band member, so
+    // a miss would read `undefined` and carry NaN through the path math into a
+    // stored tag.
+    expect(lineTagDropAt(spec, 'L9', { x: 30, y: 0 }, {}, null)).toBeNull();
   });
 });

@@ -109,12 +109,11 @@ import { isFreeAnchorEnd } from '../model/transferAnchors';
 import { transferEndWorld } from '../geometry/transferEnds';
 import {
   anchorFromArcLen,
-  closestParamOnOffsetPath,
   LINE_TAG_SNAP_TOLERANCE,
+  lineTagDropAt,
   lineTraversesForwardCanon,
   offsetPathLength,
   sampleOffsetPath,
-  snapNeighborTag,
 } from '../geometry/lineTagGeometry';
 import type { LineId, StationId, Transfer, TransferDrawOrder, TransferEnd } from '../model/types';
 import { findMatchingStations } from '../model/matching';
@@ -1150,51 +1149,38 @@ export function MapCanvas() {
   // Hover/click handlers passed to SegmentBand when in add-line-tag mode.
   // Each band's renderer captures its own spec via closure.
   const makeBandHandlers = (spec: SegmentBandSpec) => {
-    // Placement parity with the tag drag: the hover ghost and the click both
-    // apply the same neighbor snap, so the preview always matches the dropped
-    // tag. Always on (a tag lines up with its interlined siblings); Shift
-    // bypasses. `offset` is the placing stripe's own offset — the alignment is
-    // by cross-section, so it must know which stripe the tag lands on.
-    const snapTagT = (t: number, offset: number, shiftKey: boolean): number => {
-      if (shiftKey) return t;
-      return snapNeighborTag({
-        candCanonT: t,
-        candOffset: offset,
-        candPairKey: spec.pairKey,
-        selfTagId: '', // a tag being placed has no id yet
-        bandCenterline: spec.centerline,
-        curveRadius: spec.radius,
-        lineStripeOffset: (lid) => {
-          const idx = spec.lines.findIndex((l) => l.id === lid);
-          return idx < 0 ? null : spec.stripeOffsets[idx];
-        },
-        lineTags: useDoc.getState().lineTags,
-        tol: LINE_TAG_SNAP_TOLERANCE / view.viewport.zoom,
-      }).canonT;
-    };
+    // Where a tag would land, for whichever of the two handlers is asking.
+    // ONE resolution rather than a copy each (`lineTagDropAt`): the hover ghost
+    // and the click that commits have to agree about the drop point, and a
+    // hand-written pair agrees only until one of them gains a rule. The
+    // neighbor snap is part of that answer — always on, so a tag lines up with
+    // its interlined siblings; Shift bypasses it.
+    const dropAt = (lineId: LineId, e: React.PointerEvent | React.MouseEvent) =>
+      lineTagDropAt(
+        spec,
+        lineId,
+        view.screenToWorld(e.clientX, e.clientY),
+        useDoc.getState().lineTags,
+        e.shiftKey ? null : LINE_TAG_SNAP_TOLERANCE / view.viewport.zoom,
+      );
     return {
       onLineHover: (lineId: LineId, e: React.PointerEvent) => {
         const line = lines[lineId];
         if (!line) return;
-        // Find this stripe's baked offset within the band.
-        const k = spec.lines.findIndex((l) => l.id === lineId);
-        const offset = spec.stripeOffsets[k];
-        const world = view.screenToWorld(e.clientX, e.clientY);
-        const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-        const t = snapTagT(closest.t, offset, e.shiftKey);
-        const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, t);
+        const drop = dropAt(lineId, e);
+        if (!drop) return;
+        const sample = sampleOffsetPath(spec.centerline, spec.radius, drop.offset, drop.t);
         // Determine canon vs line-traversal: the band's pairKey is canonical.
         // For this band's stations, fromCanon < toCanon. The line traverses
         // forward-canon iff line.stations contains (fromCanon, toCanon) as a
         // consecutive pair.
-        const [fromCanon, toCanon] = spec.pairKey.split('|');
-        const forward = lineTraversesForwardCanon(line, fromCanon, toCanon);
+        const forward = lineTraversesForwardCanon(line, drop.fromCanon, drop.toCanon);
         selection.setLineTagHoverPreview({
           lineId,
           service: line.service,
-          fromStationId: fromCanon,
-          toStationId: toCanon,
-          t,
+          fromStationId: drop.fromCanon,
+          toStationId: drop.toCanon,
+          t: drop.t,
           p: sample.p,
           tangent: sample.tangent,
           lineForwardMatchesCanon: forward,
@@ -1205,18 +1191,13 @@ export function MapCanvas() {
       },
       onLineClick: (lineId: LineId, e: React.MouseEvent) => {
         e.stopPropagation();
-        const line = lines[lineId];
-        if (!line) return;
-        const k = spec.lines.findIndex((l) => l.id === lineId);
-        const offset = spec.stripeOffsets[k];
-        const world = view.screenToWorld(e.clientX, e.clientY);
-        const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-        const t = snapTagT(closest.t, offset, e.shiftKey);
-        const [fromCanon, toCanon] = spec.pairKey.split('|');
-        const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
+        if (!lines[lineId]) return;
+        const drop = dropAt(lineId, e);
+        if (!drop) return;
+        const stripeTotal = offsetPathLength(spec.centerline, spec.radius, drop.offset);
         // Anchor to whichever endpoint is nearer at insertion time.
-        const { anchorEnd, distance } = anchorFromArcLen(t * stripeTotal, stripeTotal);
-        addLineTag(lineId, fromCanon, toCanon, anchorEnd, distance, 0);
+        const { anchorEnd, distance } = anchorFromArcLen(drop.t * stripeTotal, stripeTotal);
+        addLineTag(lineId, drop.fromCanon, drop.toCanon, anchorEnd, distance, 0);
         // Stay in mode (matches + Station behavior).
       },
     };

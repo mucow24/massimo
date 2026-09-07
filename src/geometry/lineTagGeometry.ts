@@ -300,3 +300,69 @@ export function snapNeighborTag(args: {
   }
   return { canonT: args.candCanonT, snapped: false };
 }
+
+/** Where a tag being placed on a band lands: the stripe it rides, the
+ *  canonical-centerline parameter along it, and the corridor's two ends. */
+export interface LineTagDrop {
+  /** The placing stripe's baked offset within the band. */
+  offset: number;
+  /** Canonical `t` ∈ [0, 1] along that stripe, neighbor snap already applied. */
+  t: number;
+  fromCanon: StationId;
+  toCanon: StationId;
+}
+
+/**
+ * Resolve a pointer position over a band's stripe into the drop a line tag
+ * being placed would take. Returns null when `lineId` has no stripe in this
+ * band — there is no offset to measure against, and reading one off the end of
+ * `stripeOffsets` would carry `undefined` into the path math as NaN.
+ *
+ * ONE function for the hover ghost and the click that commits, which is the
+ * whole point of it: the two used to derive this by hand, with a comment on
+ * each promising they agreed. A promise like that holds until one side gains a
+ * rule — and a preview that shows the tag in one place while the click drops it
+ * in another is the failure nobody sees coming, because each half looks correct
+ * on its own.
+ *
+ * `snapTol` is the neighbor-snap engage radius in world arc-length units, or
+ * null for no snap (the Shift bypass). Snapping is by cross-section, so it has
+ * to know which stripe the tag lands on — see {@link snapNeighborTag}.
+ */
+export function lineTagDropAt(
+  spec: {
+    pairKey: string;
+    lines: readonly { id: LineId }[];
+    stripeOffsets: readonly number[];
+    centerline: Vec2[];
+    radius: number;
+  },
+  lineId: LineId,
+  world: Vec2,
+  lineTags: Record<string, LineTag>,
+  snapTol: number | null,
+): LineTagDrop | null {
+  const k = spec.lines.findIndex((l) => l.id === lineId);
+  if (k < 0) return null;
+  const offset = spec.stripeOffsets[k];
+  const raw = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world).t;
+  const t =
+    snapTol === null
+      ? raw
+      : snapNeighborTag({
+          candCanonT: raw,
+          candOffset: offset,
+          candPairKey: spec.pairKey,
+          selfTagId: '', // a tag being placed has no id yet
+          bandCenterline: spec.centerline,
+          curveRadius: spec.radius,
+          lineStripeOffset: (lid) => {
+            const idx = spec.lines.findIndex((l) => l.id === lid);
+            return idx < 0 ? null : spec.stripeOffsets[idx];
+          },
+          lineTags,
+          tol: snapTol,
+        }).canonT;
+  const [fromCanon, toCanon] = spec.pairKey.split('|');
+  return { offset, t, fromCanon, toCanon };
+}

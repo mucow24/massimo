@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `612525d` (2026-09-03, #564) — verified against the live source.** This
+**Up to date as of commit `844dbc8` (2026-09-05, #566) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -297,6 +297,12 @@ src/
     SegmentedToggle.tsx         # the ONE pick-one control (~16 inline Radix ToggleGroup clusters)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
+    useInlineRename.ts          # click-to-edit name state, shared by every inline rename (map name,
+                                #   style names, palette title, a palette color row's two): draft +
+                                #   a one-shot cancel flag, so a commit fires exactly once on Enter
+                                #   or blur and Escape writes nothing. The library dialog's
+                                #   RenameField answers the same contract WITHOUT the hook (async
+                                #   commit; Escape kept out of the Dialog's dismiss)
     usePopover.ts               # open/dismiss + `panelStyle` for the hand-rolled toolbar panels
                                 #   (View, Developer): fixed-positioned in window coordinates off
                                 #   the trigger's wrap, re-measured on resize and scroll
@@ -3116,8 +3122,10 @@ places raw.
 **Line tags** keep their own arc-length snapper (`snapNeighborTag` in `lineTagGeometry.ts`):
 nearest in-tolerance neighbor tag in the corridor, **always on** (a tag lines up with its
 interlined siblings — independent of the "Snap to all" pref), Shift bypasses,
-`LINE_TAG_SNAP_TOLERANCE/zoom`, guide to the matched neighbor; the add-tag hover ghost and
-click apply the same snap. Alignment is by **cross-section**, not fraction-of-own-stripe:
+`LINE_TAG_SNAP_TOLERANCE/zoom`, guide to the matched neighbor. The add-tag hover ghost and the
+click that commits resolve the drop through ONE function (`lineTagDropAt`) — preview == commit
+by construction, as for the placement modes above. Alignment is by **cross-section**, not
+fraction-of-own-stripe:
 the neighbor's rendered point is projected onto the dragged stripe (closest point between
 concentric/parallel offsets lies along the shared normal), so two aligned tags sit directly
 across the corridor even where the band curves and the stripes differ in length.
