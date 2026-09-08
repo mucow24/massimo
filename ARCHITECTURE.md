@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `844dbc8` (2026-09-05, #566) — verified against the live source.** This
+**Up to date as of commit `3271eb3` (2026-09-07, #567) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -2673,6 +2673,16 @@ Six seams cover it, and a seventh rule governs anything new:
   selects itself, which the Delete gate then refuses to remove. Ctrl+C stays unfiltered: copying
   is a read. Skipping is deliberately SILENT: these gestures repeat under a held key, so a notice
   per press would be noise.
+  Ctrl+V is the one gesture on the table that WRITES, and it neither skips nor pastes blind: it
+  REVEALS, turning the row back on for every kind the paste produced (`revealPastedKinds`,
+  visibility.ts). Dropping the kind the way Ctrl+D does would lose clipboard content with nothing
+  on screen to say why — and since Ctrl+C is unfiltered, a copy taken off a hidden layer would
+  round-trip to nothing; pasting it anyway lands the invisible-and-undeletable item Ctrl+D exists
+  to prevent. This is a lasting write to the user's toggle rather than the `revealedBy` derivation
+  a placing mode uses, and that is the point: a mode reveal is temporary and needs a revert on
+  every exit path, while having just put an item on the map is a standing reason to be looking at
+  its layer. Revealing the kind's own row suffices because no copyable kind nests under the master
+  switch (pinned in `selectionOps.test.ts`).
 - **Item popovers gate too, and they are not canvas content.** A panel is a DOM overlay, so
   hiding a layer does not take its editor away — it hangs there offering to edit, and Delete, an
   item no longer on screen. `ItemPopovers` gates every kind (the station's panel is HIDDEN rather

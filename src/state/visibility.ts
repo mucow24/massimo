@@ -274,6 +274,38 @@ export function visibleSelectionKinds(): Record<SelectionKind, boolean> {
 }
 
 /**
+ * Turn the View-menu row back on for every kind that just GAINED an item — the
+ * paste door, and the one gesture on this table that WRITES rather than reads.
+ *
+ * Neither answer the readers give is right for it. Dropping the hidden kinds
+ * (Ctrl+D's answer) loses clipboard content with nothing on screen to say why,
+ * and Ctrl+C is deliberately unfiltered, so a copy taken off a hidden layer
+ * would round-trip to nothing. Pasting them anyway mints an item that is
+ * invisible AND undeletable, since the Delete gate refuses hidden kinds — only
+ * Ctrl+Z gets it back out. So paste asks for the layer.
+ *
+ * This is a lasting write to the user's toggle, NOT the `revealedBy` derivation
+ * the placing modes use, and deliberately so: a mode reveal is temporary and
+ * would need a matching revert on every exit path, while "I just put a polygon
+ * on the map" is a standing reason to be looking at polygons. Nothing to
+ * revert, so nothing to strand.
+ *
+ * Revealing the kind's own row is enough because no pasteable kind nests under
+ * the master lines/stations switch (`selectionOps.test.ts` pins that): a kind
+ * that did would also need the switch above it, and turning the whole network
+ * back on for one pasted item is a bigger answer than this door should give.
+ */
+export function revealPastedKinds(
+  created: Partial<Record<keyof typeof SELECTION_VISIBILITY_KEYS, readonly string[]>>,
+): void {
+  for (const [kind, ids] of Object.entries(created)) {
+    if (!ids?.length) continue;
+    const key = SELECTION_VISIBILITY_KEYS[kind as keyof typeof SELECTION_VISIBILITY_KEYS];
+    if (!useViewportStore.getState()[key]) setVisibility(key, true);
+  }
+}
+
+/**
  * Write one flag. Non-reactive (click handlers call it), and the setter name is
  * DERIVED from the key rather than looked up in a second table — a per-key map
  * of setters is exactly the hand-written list this registry exists to delete,

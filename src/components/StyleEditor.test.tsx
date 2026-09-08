@@ -7,11 +7,30 @@ import { TEXT_LABEL_ALIGN_CHIPS } from './TextLabelPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
 import { DOT_BASE_SHAPES, DOT_STROKE_ALIGNS } from '../model/dotStyle';
-import { DEFAULT_DOC, ROUTE_BULLET_SHAPES, TEXT_LABEL_ALIGNS } from '../model/transforms';
+import {
+  DEFAULT_DOC,
+  FONT_SIZE_STEP,
+  LABEL_FONT_SIZE_MAX,
+  LABEL_FONT_SIZE_MIN,
+  LABEL_LEADING_MAX,
+  LABEL_LEADING_MIN,
+  LABEL_LEADING_STEP,
+  LABEL_TRACKING_MAX,
+  LABEL_TRACKING_MIN,
+  LABEL_TRACKING_STEP,
+  ROUTE_BULLET_SHAPES,
+  TEXT_LABEL_ALIGNS,
+} from '../model/transforms';
 import { makeStyle } from '../test/fixtures';
-import { chooseOption } from '../test/interaction';
+import { chooseOption, stepSlider } from '../test/interaction';
 import { openColorField } from '../test/colorField';
-import type { DotStyle, LineStyleProps, StyleDef, TransferStyleProps } from '../model/types';
+import type {
+  DotStyle,
+  LineStyleProps,
+  StationStyleProps,
+  StyleDef,
+  TransferStyleProps,
+} from '../model/types';
 
 // Reset the live store each test and seed two custom stopDot styles the line
 // editor's type pickers resolve against (a dash dot for the dash-gating tests).
@@ -678,5 +697,87 @@ describe('<StyleEditor> — transfer', () => {
     const { draw: _gone, ...legacy } = def.props as TransferStyleProps;
     render(<StyleEditor def={{ ...def, props: legacy } as StyleDef} />);
     expect(screen.getByRole('combobox', { name: 'Draw' })).toHaveTextContent('Under stop dots');
+  });
+});
+
+/**
+ * The `station` kind — the map-wide default for station-name typography, and
+ * the one styleable kind whose editor had no suite of its own.
+ *
+ * Its five rows are the fields the retired doc-level label settings became
+ * (`bakeLegacyLabelSettings`, persist v14), so every station wearing the
+ * designated default reads its look from here. The two things worth pinning are
+ * that the rows are the fields the kind covers, and that they offer the SAME
+ * ladder the station inspector's per-station rows do: the panel sets the
+ * default and the inspector pins one station off it, so a bound that differed
+ * would let a style hold a value no station could be nudged to (or the reverse).
+ */
+describe('<StyleEditor> — station', () => {
+  const stationDef = (props?: Partial<StationStyleProps>) =>
+    makeStyle('station', 'st1', {
+      props: { fontSize: 12, weight: 400, italic: false, leading: 1, tracking: 0, ...props },
+    });
+
+  // The panel hands StyleEditor a def read out of the store on every render, so
+  // a second click sees the first one's write. Passing a captured def instead
+  // would let a toggle-back case pass against a component that never toggles.
+  const LiveStationEditor = () => <StyleEditor def={useDoc((s) => s.styles.st1)} />;
+
+  const seedLive = (props?: Partial<StationStyleProps>) => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: { ...useDoc.getState().styles, st1: stationDef(props) },
+    });
+    render(<LiveStationEditor />);
+  };
+  const stationProps = () => useDoc.getState().styles.st1.props as StationStyleProps;
+
+  it('covers exactly the fields the kind stores — no width row (names have no column)', () => {
+    render(<StyleEditor def={stationDef()} />);
+    expect(screen.getByRole('slider', { name: 'Size' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Weight' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Italic' })).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Leading' })).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Tracking' })).toBeInTheDocument();
+    // TextLabelStyleProps covers a width; StationStyleProps deliberately does
+    // not, so the row must not appear here by copy from its twin editor.
+    expect(screen.queryByRole('slider', { name: 'Width' })).toBeNull();
+  });
+
+  it.each([
+    ['Size', LABEL_FONT_SIZE_MIN, LABEL_FONT_SIZE_MAX],
+    ['Leading', LABEL_LEADING_MIN, LABEL_LEADING_MAX],
+    ['Tracking', LABEL_TRACKING_MIN, LABEL_TRACKING_MAX],
+  ])('offers the model %s ladder — the one the station inspector offers', (name, min, max) => {
+    render(<StyleEditor def={stationDef()} />);
+    const slider = screen.getByRole('slider', { name });
+    expect(slider).toHaveAttribute('aria-valuemin', String(min));
+    expect(slider).toHaveAttribute('aria-valuemax', String(max));
+  });
+
+  it('writes a Size step through to the def in the doc', () => {
+    seedLive({ fontSize: 12 });
+    stepSlider(screen.getByRole('slider', { name: 'Size' }), 1);
+    expect(stationProps().fontSize).toBe(12 + FONT_SIZE_STEP);
+  });
+
+  it('writes leading and tracking through independently', () => {
+    seedLive();
+    stepSlider(screen.getByRole('slider', { name: 'Leading' }), 1);
+    expect(stationProps()).toMatchObject({ leading: 1 + LABEL_LEADING_STEP, tracking: 0 });
+    stepSlider(screen.getByRole('slider', { name: 'Tracking' }), 1);
+    expect(stationProps()).toMatchObject({
+      leading: 1 + LABEL_LEADING_STEP,
+      tracking: LABEL_TRACKING_STEP,
+    });
+  });
+
+  it('toggles italic on and back off', async () => {
+    const user = userEvent.setup();
+    seedLive({ italic: false });
+    await user.click(screen.getByRole('button', { name: 'Italic' }));
+    expect(stationProps().italic).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Italic' }));
+    expect(stationProps().italic).toBe(false);
   });
 });
