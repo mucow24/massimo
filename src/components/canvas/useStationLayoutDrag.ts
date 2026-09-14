@@ -5,7 +5,7 @@ import type { Vec2 } from '../../geometry/vec';
 import type { RowCol } from '../../geometry/lattice';
 import { STOP_SIZE, rotateGridDelta, type Rotation } from '../../geometry/orientation';
 import { stationCircle } from '../../geometry/lineCircle';
-import { lineInterlineGapOf, lineWidthOf } from '../../model/lineWidth';
+import { lineWidthOf } from '../../model/lineWidth';
 import { captureMirrorTargets, type MirrorTarget } from '../../state/mirrorDispatch';
 import {
   anchorBlockerNodes,
@@ -13,6 +13,7 @@ import {
   cursorCellAt,
   dragLattice,
   findDropTarget,
+  ghostSourceParams,
   otherLayoutNodes,
   sameCell,
   sourceCellOf,
@@ -140,12 +141,6 @@ export function useStationLayoutDrag(
     // Existence guard only — bail the frame if the node vanished mid-gesture.
     // The window no longer hangs off this cell (it rides the cursor below).
     if (!sourceCellOf(st, ds.source)) return;
-    // A hosted anchor takes the LABEL's parameters exactly: unit nominal width
-    // (so ring-1 lands a full cell out from a default-width stop) and no
-    // interline gap, with srcIsPoint making it body-less for the overlap check.
-    const isPoint = ds.source.kind !== 'stop';
-    const wSrc = ds.source.kind === 'stop' ? lineWidthOf(doc.lines[ds.source.lineId]) : STOP_SIZE;
-    const gSrc = ds.source.kind === 'stop' ? lineInterlineGapOf(doc.lines[ds.source.lineId]) : 0;
     const otherNodes = [
       ...otherLayoutNodes(stationLayoutNodes(st, doc.lines), ds.source),
       // Anchors block slots without being lattice nodes (see anchorBlockerNodes).
@@ -153,9 +148,7 @@ export function useStationLayoutDrag(
     ];
     const { anchor, ghosts } = dragLattice({
       cursor,
-      wSrc,
-      gSrc,
-      srcIsPoint: isPoint,
+      ...ghostSourceParams(ds.source, doc.lines),
       otherNodes,
       basis: shiftKey ? 'diagonal' : 'orthogonal',
       stationRotation: rotation,

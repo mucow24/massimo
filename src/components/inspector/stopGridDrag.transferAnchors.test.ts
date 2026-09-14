@@ -2,11 +2,16 @@ import { describe, it, expect } from 'vitest';
 import {
   anchorBlockerNodes,
   computeGhosts,
+  dragLattice,
+  ghostSourceParams,
+  nudgeTarget,
   otherLayoutNodes,
+  sameCell,
   sourceCellOf,
   spawnAnchorCell,
   stationLayoutNodes,
   GRID_RADIUS,
+  type WidthNode,
 } from './stopGridDrag';
 import { STOP_SIZE } from '../../geometry/orientation';
 import { makeLine, makeStation, makeStop } from '../../test/fixtures';
@@ -15,7 +20,7 @@ import type { Line, Station } from '../../model/types';
 // Hosted transfer anchors ride the station lattice as PASSENGERS: they never
 // enter stationLayoutNodes (whose node identity is `lineId: string | null`,
 // where null already means "the label"), but they do block slots, and they
-// drag on the label's exact parameters.
+// drag body-less like the label — on the projection node's own pitch.
 
 const lines: Record<string, Line> = { l1: makeLine({ id: 'l1' }) };
 const station = (anchors: { id: string; row: number; col: number }[] = []): Station =>
@@ -179,5 +184,106 @@ describe('a point source cannot stack on a body-less node', () => {
     const opposite = ghosts.some((g) => Math.abs(g.row) < 1e-9 && Math.abs(g.col + 1) < 1e-9);
     expect(onLabel).toBe(false); // the label's cell stays blocked
     expect(opposite).toBe(true); // the slot away from the label survives
+  });
+});
+
+// A hosted anchor is body-less like the label, but it has no pitch of its own:
+// it takes the projection node's — the spacing that stop's line packs at — so
+// it sits on the same grid as the stops around it. The label's tangency pitch
+// ((STOP_SIZE + w)/2) is incommensurate with a thin line's w: an anchor 45°
+// off one width-6 stop could never also sit level with the next, so no
+// transfer through it could turn a clean corner.
+describe('a hosted anchor takes the projection node’s own pitch', () => {
+  const thin: WidthNode = { row: 0, col: 0, w: 6 };
+  const ANCHOR_SRC = ghostSourceParams({ kind: 'anchor' }, {});
+  const common = {
+    basis: 'orthogonal' as const,
+    stationRotation: 0 as const,
+    gridRadius: GRID_RADIUS,
+  };
+
+  it('ring 1 sits one stop-pitch out, not at the label’s tangency', () => {
+    const ghosts = computeGhosts({ ...ANCHOR_SRC, ...common, anchor: thin, otherNodes: [thin] });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 6 / 14 }))).toBe(true);
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 10 / 14 }))).toBe(false);
+    // The label keeps its tangency pitch — the rule is the anchor's alone.
+    const label = computeGhosts({
+      ...ghostSourceParams({ kind: 'label' }, {}),
+      ...common,
+      anchor: thin,
+      otherNodes: [thin],
+    });
+    expect(label.some((g) => sameCell(g, { row: 0, col: 10 / 14 }))).toBe(true);
+  });
+
+  it('includes the node’s interline gap — the packed pitch its line uses', () => {
+    // tangentGap(6, 6, 4, 4) = 10; the label's pair pitch would be (14+6)/2 + 4 = 14.
+    const gapped: WidthNode = { row: 0, col: 0, w: 6, g: 4 };
+    const ghosts = computeGhosts({
+      ...ANCHOR_SRC,
+      ...common,
+      anchor: gapped,
+      otherNodes: [gapped],
+    });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 10 / 14 }))).toBe(true);
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1 }))).toBe(false);
+  });
+
+  it('lets a transfer turn a clean corner between two thin stops (drag)', () => {
+    // Two width-6 stops packed at their own pitch. The slot level with A and
+    // on R's 45° — (0, 6/14) — is where a 90°+45° elbow needs the anchor. It
+    // is A's ring-1 cardinal on the stop pitch; on the label's pitch A's ring
+    // 1 sat at 10/14 and the cell did not exist.
+    const A: WidthNode = { row: 0, col: 0, w: 6 };
+    const R: WidthNode = { row: 6 / 14, col: 0, w: 6 };
+    const { ghosts } = dragLattice({
+      cursor: { row: 0, col: 6 / 14 },
+      ...ANCHOR_SRC,
+      otherNodes: [A, R],
+      basis: 'orthogonal',
+      stationRotation: 0,
+    });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 6 / 14 }))).toBe(true);
+  });
+
+  it('a keyboard nudge hops on the same grid', () => {
+    // Down from one cell above a thin stop: the nearest thin-grid slot in that
+    // direction is -12/14 (the label's pitch would have offered -10/14).
+    const target = nudgeTarget({
+      source: { row: -1, col: 0 },
+      ...ANCHOR_SRC,
+      otherNodes: [thin],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      arrow: { row: 1, col: 0 },
+    });
+    expect(target && sameCell(target, { row: -12 / 14, col: 0 })).toBe(true);
+  });
+
+  it('spawnAnchorCell lands on the thin stop’s grid', () => {
+    // The same tie-break the default case pins — the lowest (row, col) of the
+    // ring-1 cardinals — now one stop-pitch out.
+    const thinLines = { t: makeLine({ id: 't', width: 6 }) };
+    const st = makeStation({ id: 's1', stops: [makeStop('t', { row: 0, col: 0 })] });
+    const [row, col] = spawnAnchorCell(st, thinLines);
+    expect(sameCell({ row, col }, { row: -6 / 14, col: 0 })).toBe(true);
+  });
+});
+
+describe('ghostSourceParams', () => {
+  it('a stop carries its line’s width and gap; the label and an anchor are unit-width points', () => {
+    const l = { l1: makeLine({ id: 'l1', width: 6, interlineGap: 4 }) };
+    expect(ghostSourceParams({ kind: 'stop', lineId: 'l1' }, l)).toEqual({ wSrc: 6, gSrc: 4 });
+    expect(ghostSourceParams({ kind: 'label' }, l)).toEqual({
+      wSrc: STOP_SIZE,
+      gSrc: 0,
+      srcIsPoint: true,
+    });
+    expect(ghostSourceParams({ kind: 'anchor' }, l)).toEqual({
+      wSrc: STOP_SIZE,
+      gSrc: 0,
+      srcIsPoint: true,
+      srcOnAnchorPitch: true,
+    });
   });
 });

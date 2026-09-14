@@ -239,6 +239,15 @@ export interface GhostSpec {
    *  the point itself. Point-ness is the node's, not the label's — see
    *  `WidthNode.isPoint`, the same property on the blocker side. */
   srcIsPoint?: boolean;
+  /** The moving node takes the ANCHOR node's own pitch — `tangentGap(w, w, g,
+   *  g)` of the node the lattice hangs off, the spacing that node's line packs
+   *  its stops at — instead of its pair tangency with `wSrc`/`gSrc` (which then
+   *  feed only the overlap check: nothing, under `srcIsPoint`). A hosted
+   *  transfer anchor sets it: it has no width of its own, and the label's
+   *  tangency pitch is incommensurate with a thin line's, so on it an anchor
+   *  can't sit on the grid the stops it connects sit on, and no transfer
+   *  through it can turn a clean 45°/90° corner. */
+  srcOnAnchorPitch?: boolean;
   /** Anchor node the candidate lattice hangs off (typically the nearest
    *  non-source node). */
   anchor: WidthNode;
@@ -259,12 +268,41 @@ export interface GhostSpec {
   center?: RowCol;
 }
 
+/** The source-side fields of a GhostSpec: what is being moved, as the lattice
+ *  sees it. */
+export type GhostSourceParams = Pick<
+  GhostSpec,
+  'wSrc' | 'gSrc' | 'srcIsPoint' | 'srcOnAnchorPitch'
+>;
+
+/**
+ * The ONE place a source kind becomes lattice parameters, shared by the drag
+ * (useStationLayoutDrag), the keyboard nudge (App.tsx) and spawnAnchorCell, so
+ * the three can never reach different slots. A stop carries its line's width
+ * and interline gap. The label and a hosted anchor are body-less points at the
+ * nominal cell width (the same STOP_SIZE `anchorBlockerNodes` gives an anchor
+ * on the blocker side); the label parks at its tangency with the stop, while a
+ * transfer anchor rides the stop's own pitch (`srcOnAnchorPitch`).
+ */
+export function ghostSourceParams(
+  source: { kind: 'stop'; lineId: string } | { kind: 'label' | 'anchor' },
+  lines: Record<string, Line>,
+): GhostSourceParams {
+  if (source.kind === 'stop') {
+    const line = lines[source.lineId];
+    return { wSrc: lineWidthOf(line), gSrc: lineInterlineGapOf(line) };
+  }
+  if (source.kind === 'label') return { wSrc: STOP_SIZE, gSrc: 0, srcIsPoint: true };
+  return { wSrc: STOP_SIZE, gSrc: 0, srcIsPoint: true, srcOnAnchorPitch: true };
+}
+
 /**
  * Candidate drop slots on `anchor`'s lattice, windowed around `center`: the
  * unit lattice scaled by the drag-pair tangency factor — ring-1 ghosts land
  * where the source's body exactly touches the anchor's (1 for two
  * default-width nodes, e.g. 1.5 for a width-28 stop against a default one;
- * farther rings scale uniformly).
+ * farther rings scale uniformly) — or, for a `srcOnAnchorPitch` source, by
+ * the anchor's own packing pitch.
  * The basis is chosen in SCREEN terms and read back in the station's unrotated
  * local frame (`localLatticeOffsets`), so the user-facing slot directions are
  * identical at any station rotation. Slots closer to another node than their
@@ -275,9 +313,22 @@ export interface GhostSpec {
  * edge reaches that point.
  */
 export function computeGhosts(spec: GhostSpec): RowCol[] {
-  const { wSrc, gSrc, srcIsPoint, anchor, otherNodes, basis, stationRotation, gridRadius, center } =
-    spec;
-  const t = tangentGap(wSrc, anchor.w, gSrc ?? 0, anchor.g ?? 0) / STOP_SIZE;
+  const {
+    wSrc,
+    gSrc,
+    srcIsPoint,
+    srcOnAnchorPitch,
+    anchor,
+    otherNodes,
+    basis,
+    stationRotation,
+    gridRadius,
+    center,
+  } = spec;
+  const t =
+    (srcOnAnchorPitch
+      ? tangentGap(anchor.w, anchor.w, anchor.g ?? 0, anchor.g ?? 0)
+      : tangentGap(wSrc, anchor.w, gSrc ?? 0, anchor.g ?? 0)) / STOP_SIZE;
   // The window of rings rides on `center` while the lattice keeps hanging off
   // `anchor` — same pitch, same phase, so ring-1 tangency and the anchor's
   // axes survive; what changes is that a node walked out to the rim gets a
@@ -344,24 +395,19 @@ export function anchorPool<T extends WidthNode>(nodes: readonly T[]): readonly T
  * drag hook's per-frame step (useStationLayoutDrag), kept here so the
  * reachable-slot rule stays unit-testable.
  */
-export function dragLattice(spec: {
-  cursor: RowCol;
-  wSrc: number;
-  /** See GhostSpec.gSrc. */
-  gSrc?: number;
-  /** See GhostSpec.srcIsPoint. */
-  srcIsPoint?: boolean;
-  otherNodes: readonly WidthNode[];
-  basis: LatticeBasis;
-  stationRotation: Rotation;
-}): { anchor: WidthNode | null; ghosts: RowCol[] } {
-  const { cursor, wSrc, gSrc, srcIsPoint, otherNodes, basis, stationRotation } = spec;
+export function dragLattice(
+  spec: GhostSourceParams & {
+    cursor: RowCol;
+    otherNodes: readonly WidthNode[];
+    basis: LatticeBasis;
+    stationRotation: Rotation;
+  },
+): { anchor: WidthNode | null; ghosts: RowCol[] } {
+  const { cursor, otherNodes, basis, stationRotation, ...src } = spec;
   const anchor = nearestNode(cursor, anchorPool(otherNodes));
   if (!anchor) return { anchor: null, ghosts: [] };
   const ghosts = computeGhosts({
-    wSrc,
-    gSrc,
-    srcIsPoint,
+    ...src,
     anchor,
     otherNodes,
     basis,
@@ -385,26 +431,21 @@ export function dragLattice(spec: {
  * filter), ranked by direction alignment first, then distance, then (row,
  * col) order as a deterministic tie-break. Null when no slot qualifies.
  */
-export function nudgeTarget(spec: {
-  source: RowCol;
-  wSrc: number;
-  /** See GhostSpec.gSrc. */
-  gSrc?: number;
-  /** See GhostSpec.srcIsPoint. */
-  srcIsPoint?: boolean;
-  otherNodes: readonly WidthNode[];
-  basis: LatticeBasis;
-  stationRotation: Rotation;
-  /** Screen-frame arrow direction: one of (±1, 0) / (0, ±1). */
-  arrow: RowCol;
-}): RowCol | null {
-  const { source, wSrc, gSrc, srcIsPoint, otherNodes, basis, stationRotation, arrow } = spec;
+export function nudgeTarget(
+  spec: GhostSourceParams & {
+    source: RowCol;
+    otherNodes: readonly WidthNode[];
+    basis: LatticeBasis;
+    stationRotation: Rotation;
+    /** Screen-frame arrow direction: one of (±1, 0) / (0, ±1). */
+    arrow: RowCol;
+  },
+): RowCol | null {
+  const { source, otherNodes, basis, stationRotation, arrow, ...src } = spec;
   const anchor = nearestNode(source, anchorPool(otherNodes));
   if (!anchor) return null;
   const ghosts = computeGhosts({
-    wSrc,
-    gSrc,
-    srcIsPoint,
+    ...src,
     anchor,
     otherNodes,
     basis,
@@ -455,13 +496,13 @@ export function nudgeTarget(spec: {
  * has no line and must not land on the label.
  *
  * Instead it reuses the lattice the DRAG would offer: ghosts around the nearest
- * anchorable node, computed with the label's point-like parameters, minus any
- * slot an existing anchor already holds. Picks the free slot CLOSEST to a
- * station node (row, col as deterministic tie-breaks): a new anchor must sit
- * visibly against the station it belongs to — spawned at the lattice's far
- * corner it reads as a stray map object, not a station cell. Repeated clicks
- * still walk outward, one ring at a time. Falls back to one cell right of the
- * label when the overlap filter leaves nothing.
+ * anchorable node, computed with a hosted anchor's own parameters
+ * (`ghostSourceParams`), minus any slot an existing anchor already holds. Picks
+ * the free slot CLOSEST to a station node (row, col as deterministic
+ * tie-breaks): a new anchor must sit visibly against the station it belongs to
+ * — spawned at the lattice's far corner it reads as a stray map object, not a
+ * station cell. Repeated clicks still walk outward, one ring at a time. Falls
+ * back to one cell right of the label when the overlap filter leaves nothing.
  */
 export function spawnAnchorCell(
   station: Pick<Station, 'stops' | 'label' | 'transferAnchors'>,
@@ -473,9 +514,7 @@ export function spawnAnchorCell(
   const fallback: [number, number] = [station.label.row, station.label.col + 1];
   if (!anchor) return fallback;
   const ghosts = computeGhosts({
-    wSrc: STOP_SIZE,
-    gSrc: 0,
-    srcIsPoint: true,
+    ...ghostSourceParams({ kind: 'anchor' }, lines),
     anchor,
     otherNodes: [...nodes, ...anchorBlockerNodes(station)],
     basis: 'orthogonal',
