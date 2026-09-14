@@ -6,7 +6,7 @@ import {
 } from './selectionOps';
 import { useDoc, useSelection } from './store';
 import { useViewportStore } from './viewportStore';
-import { SELECTION_VISIBILITY_KEYS } from './visibility';
+import { SELECTION_VISIBILITY_KEYS, VISIBILITY_ITEMS } from './visibility';
 import { DEFAULT_DOC } from '../model/transforms';
 import { collectGroupSiblings } from '../components/canvas/groupDrag';
 import {
@@ -276,6 +276,23 @@ describe('every selectable kind is gated identically on both halves', () => {
 
   it('every registry kind is seeded, so no case asserts against undefined', () => {
     expect(KINDS.filter((k) => SEEDED[k] === undefined)).toEqual([]);
+  });
+
+  // The assumption `revealPastedKinds` rests on: paste turns a kind's own row
+  // back on and stops there. A kind that ALSO nested under the master switch
+  // would still be hidden after that reveal — the pasted item invisible and, by
+  // the Delete gate below, unremovable. The four copyable kinds are all
+  // free-standing annotation layers today; the day one isn't, this fails rather
+  // than the reveal quietly falling short.
+  it('no copyable kind nests under the master switch, so revealing its row is enough', () => {
+    const nesting = COPYABLE.filter(
+      (kind) =>
+        VISIBILITY_ITEMS.find(
+          (i) =>
+            i.key === SELECTION_VISIBILITY_KEYS[kind as keyof typeof SELECTION_VISIBILITY_KEYS],
+        )?.nestsUnderNetwork,
+    );
+    expect(nesting).toEqual([]);
   });
 
   it('shows every kind with every layer on', () => {

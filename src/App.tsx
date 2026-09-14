@@ -7,7 +7,12 @@ import { BouncingBullet } from './components/BouncingBullet';
 import { isFunModeActive } from './state/funMode';
 import { DEFAULT_PARAMS } from './fun/ballPhysics';
 import { chromeIsDark, nextGridSize, useViewportStore } from './state/viewportStore';
-import { kindVisibleNow, setVisibility, VISIBILITY_ITEMS } from './state/visibility';
+import {
+  kindVisibleNow,
+  revealPastedKinds,
+  setVisibility,
+  VISIBILITY_ITEMS,
+} from './state/visibility';
 import {
   beginHistoryGroup,
   cancelAppendMode,
@@ -657,6 +662,10 @@ export default function App() {
               else if (item.kind === 'svg-image') svgImages.push(doc.pasteSvgImage(item.data));
             }
             group?.commit();
+            // Paste WRITES, so it reveals rather than filters (revealPastedKinds
+            // argues why): an item dropped onto a switched-off layer is
+            // invisible, and the Delete gate then refuses to remove it.
+            revealPastedKinds({ bullets, labels, polygons, svgImages });
             useSelection.getState().setMixedSelection({ bullets, labels, polygons, svgImages });
           })
           .catch(() => {});

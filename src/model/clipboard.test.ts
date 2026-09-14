@@ -325,3 +325,93 @@ describe('readClipboard drops malformed items, keeps valid ones', () => {
     expect(readClipboard(envelope([bad]))).toBeNull();
   });
 });
+
+/**
+ * Every REQUIRED field of every kind, proved load-bearing one field at a time.
+ *
+ * The validators above are the third gate on a hostile string, and this file's
+ * own header names the way they fail invisibly: a check that quietly stops
+ * covering a field still accepts everything valid and still rejects the
+ * obviously bad, so no round-trip test notices. The suites above catch that a
+ * handful of fields at a time, by hand, which is a list that falls behind the
+ * type.
+ *
+ * These cases come from the payloads themselves. Each one below carries its
+ * kind's required fields and NOTHING optional — so every key in it is a key the
+ * validator must insist on, and a field added to the model arrives here the
+ * moment the payload (typed as `Omit<T, 'id'>`) has to gain it to compile.
+ *
+ * Two ways to break one field: take it away, and hand it a value of the wrong
+ * type. Absence catches a check that was never written; the wrong type catches
+ * one that reads the wrong field.
+ */
+describe('every required clipboard field is load-bearing', () => {
+  // Required-only twins of the payloads above: polygonItem carries optional
+  // fields, and an optional field is legitimately absent, so it cannot be
+  // asserted on here.
+  const REQUIRED: ClipPayload[] = [
+    bulletItem,
+    labelItem,
+    {
+      kind: 'polygon',
+      data: {
+        vertices: polygonItem.kind === 'polygon' ? polygonItem.data.vertices : [],
+        fill: '#aabbcc',
+        stroke: '#112233',
+        darkFill: '#445566',
+        darkStroke: '#778899',
+        strokeWidth: 2,
+      },
+    },
+    {
+      kind: 'svg-image',
+      data: {
+        x: 1,
+        y: 2,
+        width: 30,
+        height: 40,
+        rotation: 0,
+        href: 'data:image/svg+xml;base64,PHN2Zy8+',
+      },
+    },
+  ];
+
+  // A value the field cannot legally hold, from the type of the one it does.
+  // `null` is legal in exactly one place (an unbound bullet's lineId) and a
+  // number is legal in none of the string/enum slots, so 42 covers both; every
+  // other slot (number, boolean, array, object) refuses a string.
+  const wrongType = (good: unknown): unknown =>
+    typeof good === 'string' || good === null ? 42 : 'not a legal value';
+
+  const cases = REQUIRED.flatMap((item) =>
+    Object.keys(item.data).map((field) => [item.kind, field, item] as const),
+  );
+
+  it('covers every required field of all four kinds', () => {
+    // The count is the reason to trust the sweep below: a payload that lost a
+    // field would quietly test fewer things. 6 bullet + 10 label + 6 polygon
+    // + 6 svg-image.
+    expect(cases).toHaveLength(28);
+  });
+
+  it.each(cases)('drops a %s whose %s is missing', (kind, field, item) => {
+    const { [field]: _gone, ...rest } = item.data as Record<string, unknown>;
+    expect(readClipboard(envelope([{ kind, data: rest }]))).toBeNull();
+  });
+
+  it.each(cases)('drops a %s whose %s is the wrong type', (kind, field, item) => {
+    const data = item.data as Record<string, unknown>;
+    expect(
+      readClipboard(envelope([{ kind, data: { ...data, [field]: wrongType(data[field]) } }])),
+    ).toBeNull();
+  });
+
+  it.each(REQUIRED.map((i) => [i.kind, i] as const))(
+    'accepts the %s payload these cases start from',
+    (_kind, item) => {
+      // Without this the sweep above would pass just as well against a payload
+      // that was already invalid, which is no test of any single field.
+      expect(readClipboard(writeClipboard([item]))).toEqual([item]);
+    },
+  );
+});

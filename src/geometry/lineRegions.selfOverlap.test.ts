@@ -73,21 +73,43 @@ const workaroundDoc = () =>
 const facesFor = (doc: MapDoc): RegionFace[] =>
   buildOverlapRegions(buildBands(doc.stations, doc.lines, doc.lineOrder), []);
 
+/**
+ * Rotation- and direction-invariant content key of ONE ring: the smallest of
+ * its rotations in both windings, over clipper-quantized points. Two rings
+ * tracing the same loop from different start points, or wound opposite ways,
+ * key the same — which is what lets the parity tests below claim "byte for
+ * byte" about geometry the pipeline is free to emit in any rotation.
+ */
+const canonicalRing = (ring: Ring): string => {
+  const pts = ring.map((p) => `${clipperQuant(p.x)},${clipperQuant(p.y)}`);
+  const variants: string[] = [];
+  for (const seq of [pts, [...pts].reverse()]) {
+    for (let s = 0; s < seq.length; s++) {
+      variants.push([...seq.slice(s), ...seq.slice(0, s)].join(' '));
+    }
+  }
+  return variants.sort()[0];
+};
+
 /** Rotation- and direction-invariant content key of one face's rings. */
-const keyOf = (f: RegionFace): string =>
-  f.face
-    .map((ring) => {
-      const pts = ring.map((p) => `${clipperQuant(p.x)},${clipperQuant(p.y)}`);
-      const variants: string[] = [];
-      for (const seq of [pts, [...pts].reverse()]) {
-        for (let s = 0; s < seq.length; s++) {
-          variants.push([...seq.slice(s), ...seq.slice(0, s)].join(' '));
-        }
-      }
-      return variants.sort()[0];
-    })
-    .sort()
-    .join('|');
+const keyOf = (f: RegionFace): string => f.face.map(canonicalRing).sort().join('|');
+
+/** The same key over a bare ring list — the shape an exclusion hole comes in. */
+const ringKey = (rings: Ring[]): string[] => rings.map(canonicalRing).sort();
+
+/**
+ * The exclusion holes one doc's faces produce when `winner` takes every one of
+ * them. Shared by the two golden-parity tests: each compares a self-overlap
+ * reveal against the two-line workaround that has always produced it, so both
+ * halves have to be measured the same way or the comparison proves nothing.
+ */
+const holesFor = (doc: MapDoc, winner: string, lineOrder: string[]): Map<string, Ring[]> => {
+  const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+  const slivers: RegionSliver[] = [];
+  const faces = buildOverlapRegions(bands, [], slivers);
+  const winners = faces.map(() => ({ winner, assignmentId: 'r1' }));
+  return buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 0, slivers);
+};
 
 describe('self-overlap faces (branch mouths)', () => {
   it('a branching line yields a mouth face covered by its two arms', () => {
@@ -167,27 +189,10 @@ describe('self-overlap faces (branch mouths)', () => {
   });
 
   it('golden holes parity: the branch-arm reveal equals the two-line reveal, byte for byte', () => {
-    const ringKey = (rings: Ring[]): string[] =>
-      rings
-        .map((ring) => {
-          const pts = ring.map((p) => `${clipperQuant(p.x)},${clipperQuant(p.y)}`);
-          const variants: string[] = [];
-          for (const seq of [pts, [...pts].reverse()]) {
-            for (let s = 0; s < seq.length; s++) {
-              variants.push([...seq.slice(s), ...seq.slice(0, s)].join(' '));
-            }
-          }
-          return variants.sort()[0];
-        })
-        .sort();
-    const holesFor = (doc: MapDoc, winner: string, lineOrder: string[]) => {
-      const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
-      const slivers: RegionSliver[] = [];
-      const faces = buildOverlapRegions(bands, [], slivers);
-      expect(faces).toHaveLength(1);
-      const winners = [{ winner, assignmentId: 'r1' }];
-      return buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 0, slivers);
-    };
+    // Each shape yields exactly ONE mouth face, and the parity claim is about
+    // that face — a doc that grew a second one would compare the wrong pair.
+    expect(facesFor(branchDoc())).toHaveLength(1);
+    expect(facesFor(workaroundDoc())).toHaveLength(1);
     // Real branch: branch arm (index 1) wins the mouth; the trunk arm loses.
     const branch = holesFor(branchDoc(), armCoverId('l1', 1), ['l1']);
     expect([...branch.keys()]).toEqual([armCoverId('l1', 0)]);
@@ -713,26 +718,6 @@ describe('mid-edge self-crossings (band-pair rule)', () => {
   });
 
   it('golden holes parity: the band reveal equals the two-line reveal, byte for byte', () => {
-    const ringKey = (rings: Ring[]): string[] =>
-      rings
-        .map((ring) => {
-          const pts = ring.map((p) => `${clipperQuant(p.x)},${clipperQuant(p.y)}`);
-          const variants: string[] = [];
-          for (const seq of [pts, [...pts].reverse()]) {
-            for (let s = 0; s < seq.length; s++) {
-              variants.push([...seq.slice(s), ...seq.slice(0, s)].join(' '));
-            }
-          }
-          return variants.sort()[0];
-        })
-        .sort();
-    const holesFor = (doc: MapDoc, winner: string, lineOrder: string[]) => {
-      const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
-      const slivers: RegionSliver[] = [];
-      const faces = buildOverlapRegions(bands, [], slivers);
-      const winners = faces.map(() => ({ winner, assignmentId: 'r1' }));
-      return buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 0, slivers);
-    };
     // P-shape: the stem band wins; the crossing band loses.
     const p = holesFor(pDoc(), edgeCoverId('l1', 'a|b'), ['l1']);
     expect([...p.keys()]).toEqual([edgeCoverId('l1', 'd|e')]);

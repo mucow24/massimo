@@ -1131,6 +1131,69 @@ describe('App keyboard: hidden items are not actionable', () => {
     expect(Object.keys(useDoc.getState().polygons)).toHaveLength(2);
   });
 
+  // Paste is the one gesture on this table that WRITES, and neither answer the
+  // readers give is right for it: dropping the kind loses clipboard content
+  // with nothing on screen to say so (and Ctrl+C is unfiltered, so a copy of a
+  // hidden item would round-trip to nothing), while pasting it silently mints
+  // an item that is invisible AND undeletable. It asks for the layer instead.
+  describe('Ctrl+V reveals the layer it pastes into', () => {
+    const pastePolygon = async () => {
+      const readText = vi.fn().mockResolvedValue(
+        writeClipboard([
+          {
+            kind: 'polygon',
+            data: {
+              vertices: [
+                { x: 0, y: 0 },
+                { x: 5, y: 0 },
+                { x: 5, y: 5 },
+              ],
+              fill: '#ffffff',
+              stroke: '#000000',
+              darkFill: '#ffffff',
+              darkStroke: '#000000',
+              strokeWidth: 1,
+            },
+          },
+        ]),
+      );
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { readText } });
+      fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+      await waitFor(() => expect(Object.keys(useDoc.getState().polygons)).toHaveLength(1));
+      vi.unstubAllGlobals();
+    };
+
+    it('turns Polygons back on so the pasted polygon is on screen', async () => {
+      render(<App />);
+      useViewportStore.setState({ showPolygons: false });
+      await pastePolygon();
+      expect(useViewportStore.getState().showPolygons).toBe(true);
+    });
+
+    it('leaves the pasted polygon deletable — the whole point of the reveal', async () => {
+      render(<App />);
+      useViewportStore.setState({ showPolygons: false });
+      await pastePolygon();
+      // Paste selects what it made; Delete refuses hidden kinds, so without the
+      // reveal this press would leave the invisible copy stranded in the doc.
+      fireEvent.keyDown(window, { key: 'Delete' });
+      expect(Object.keys(useDoc.getState().polygons)).toEqual([]);
+    });
+
+    it('leaves an already-shown layer alone', async () => {
+      render(<App />);
+      await pastePolygon();
+      expect(useViewportStore.getState().showPolygons).toBe(true);
+    });
+
+    it('reveals only the kinds the paste actually produced', async () => {
+      render(<App />);
+      useViewportStore.setState({ showPolygons: false, showTextLabels: false });
+      await pastePolygon();
+      expect(useViewportStore.getState().showTextLabels).toBe(false);
+    });
+  });
+
   it('Delete spares a station while the network is hidden', () => {
     render(<App />);
     const id = useDoc.getState().addStation(0, 0);
