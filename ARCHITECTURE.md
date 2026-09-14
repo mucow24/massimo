@@ -1553,12 +1553,18 @@ In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose
 `lineId: string | null`, where null already means "the label", and where a node lacking `isPoint`
 would become a lattice ORIGIN via `anchorPool` — the incommensurate-pitch kink that pool exists to
 forbid), but appended to `otherNodes` as width-0 blockers (`anchorBlockerNodes`) so a stop can't be
-dropped on one. They drag and nudge on the LABEL's exact parameters (`wSrc = STOP_SIZE`,
-`gSrc = 0`, `srcIsPoint` — point-ness is a property of the NODE, not of being the label, which is
-why neither flag names it). A hosted-anchor move **must not** fan out through `dispatchMirrored`:
-`matching.ts`'s `stopsKey` ignores anchors, so two stations with different anchor sets still MATCH,
-and every target would apply its own rotated delta to the same global anchorId — a 0/2 offset pair
-cancels outright and the anchor wouldn't move at all.
+dropped on one. They drag and nudge body-less like the label (`srcIsPoint` — point-ness is a
+property of the NODE, not of being the label, which is why neither flag names it), but on the
+projection node's OWN pitch rather than the label's tangency (`srcOnAnchorPitch`: the lattice
+steps `tangentGap(w, w, g, g)` of the stop it hangs off, the spacing that stop's line packs at).
+An anchor has no width of its own, and the label's `(STOP_SIZE + w)/2` pitch is incommensurate
+with a thin line's `w`: on it, an anchor 45° off one width-6 stop could not also sit level with
+the next, and no transfer through it would turn a clean corner. `ghostSourceParams` is the one
+place the three source kinds become lattice parameters, so the drag, the nudge, and
+`spawnAnchorCell` cannot disagree. A hosted-anchor move **must not** fan out through
+`dispatchMirrored`: `matching.ts`'s `stopsKey` ignores anchors, so two stations with different
+anchor sets still MATCH, and every target would apply its own rotated delta to the same global
+anchorId — a 0/2 offset pair cancels outright and the anchor wouldn't move at all.
 
 **`Transfer`** + **`TransferEnd`** — a styled line connecting one station dot to another.
 `Transfer = {id, a: TransferEnd, b: TransferEnd, thickness?, color?, strokeWidth?, strokeColor?}`;

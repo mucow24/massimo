@@ -38,10 +38,10 @@ import {
 import { guideAlongOf, guideNudgeDelta } from './geometry/snap';
 import { useFontEpoch } from './state/fontEpoch';
 import { screenDeltaToLabelOffsets } from './geometry/labelLayout';
-import { STOP_SIZE, rotateGridDelta, type Rotation } from './geometry/orientation';
-import { lineInterlineGapOf, lineWidthOf } from './model/lineWidth';
+import { rotateGridDelta, type Rotation } from './geometry/orientation';
 import { resolveOffsetPerp } from './model/transforms';
 import {
+  ghostSourceParams,
   nudgeTarget,
   otherLayoutNodes,
   anchorBlockerNodes,
@@ -512,12 +512,9 @@ export default function App() {
           }
           const target = nudgeTarget({
             source: subCell,
-            // A hosted anchor takes the label's parameters exactly (unit
-            // nominal width, no gap, body-less for overlap), so the keyboard
-            // reaches the same slots the drag does.
-            wSrc: subSource.kind === 'stop' ? lineWidthOf(doc.lines[subSource.lineId]) : STOP_SIZE,
-            gSrc: subSource.kind === 'stop' ? lineInterlineGapOf(doc.lines[subSource.lineId]) : 0,
-            srcIsPoint: subSource.kind !== 'stop',
+            // The same source parameters the drag uses, so the keyboard
+            // reaches the same slots.
+            ...ghostSourceParams(subSource, doc.lines),
             otherNodes: [
               ...otherLayoutNodes(stationLayoutNodes(subStation, doc.lines), subSource),
               ...anchorBlockerNodes(
