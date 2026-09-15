@@ -239,9 +239,10 @@ export interface GhostSpec {
    *  the point itself. Point-ness is the node's, not the label's — see
    *  `WidthNode.isPoint`, the same property on the blocker side. */
   srcIsPoint?: boolean;
-  /** The moving node takes the ANCHOR node's own pitch — `tangentGap(w, w, g,
-   *  g)` of the node the lattice hangs off, the spacing that node's line packs
-   *  its stops at — instead of its pair tangency with `wSrc`/`gSrc` (which then
+  /** The moving node takes the ANCHOR node's own pitch on ring 1 as well —
+   *  `tangentGap(w, w, g, g)` of the node the lattice hangs off, the spacing
+   *  that node's line packs its stops at and every further ring steps at
+   *  anyway — instead of its pair tangency with `wSrc`/`gSrc` (which then
    *  feed only the overlap check: nothing, under `srcIsPoint`). A hosted
    *  transfer anchor sets it: it has no width of its own, and the label's
    *  tangency pitch is incommensurate with a thin line's, so on it an anchor
@@ -297,12 +298,12 @@ export function ghostSourceParams(
 }
 
 /**
- * Candidate drop slots on `anchor`'s lattice, windowed around `center`: the
- * unit lattice scaled by the drag-pair tangency factor — ring-1 ghosts land
- * where the source's body exactly touches the anchor's (1 for two
- * default-width nodes, e.g. 1.5 for a width-28 stop against a default one;
- * farther rings scale uniformly) — or, for a `srcOnAnchorPitch` source, by
- * the anchor's own packing pitch.
+ * Candidate drop slots on `anchor`'s lattice, windowed around `center`. Ring-1
+ * ghosts land where the source's body exactly touches the anchor's (1 for two
+ * default-width nodes, e.g. 1.5 for a width-28 stop against a default one — or
+ * the anchor's own packing pitch for a `srcOnAnchorPitch` source); every ring
+ * beyond steps at the ANCHOR's own pitch, one more stop of its line left empty,
+ * so an empty slot is anchor-sized (see `LatticePitch`).
  * The basis is chosen in SCREEN terms and read back in the station's unrotated
  * local frame (`localLatticeOffsets`), so the user-facing slot directions are
  * identical at any station rotation. Slots closer to another node than their
@@ -325,25 +326,29 @@ export function computeGhosts(spec: GhostSpec): RowCol[] {
     gridRadius,
     center,
   } = spec;
-  const t =
-    (srcOnAnchorPitch
-      ? tangentGap(anchor.w, anchor.w, anchor.g ?? 0, anchor.g ?? 0)
-      : tangentGap(wSrc, anchor.w, gSrc ?? 0, anchor.g ?? 0)) / STOP_SIZE;
+  // The lattice's two pitches, in cells: the spacing the anchor's own line packs
+  // at (every ring past the first), and where the moving node packs against
+  // the anchor (ring 1) — its pair tangency, or that same anchor pitch for a
+  // `srcOnAnchorPitch` source.
+  const step = tangentGap(anchor.w, anchor.w, anchor.g ?? 0, anchor.g ?? 0) / STOP_SIZE;
+  const first = srcOnAnchorPitch
+    ? step
+    : tangentGap(wSrc, anchor.w, gSrc ?? 0, anchor.g ?? 0) / STOP_SIZE;
   // The window of rings rides on `center` while the lattice keeps hanging off
   // `anchor` — same pitch, same phase, so ring-1 tangency and the anchor's
   // axes survive; what changes is that a node walked out to the rim gets a
   // fresh `gridRadius` of reach next time it's grabbed, instead of being stuck
-  // inside one window nailed to the cluster. Offsets are scaled by `t` below,
-  // so the anchor-relative delta is divided by it here.
+  // inside one window nailed to the cluster.
   const localOffsets = localLatticeOffsets(
     basis,
     gridRadius,
     stationRotation,
-    center && { row: (center.row - anchor.row) / t, col: (center.col - anchor.col) / t },
+    center && { row: center.row - anchor.row, col: center.col - anchor.col },
+    { first, step },
   );
   const ghosts: RowCol[] = [];
   for (const o of localOffsets) {
-    const g = { row: anchor.row + o.row * t, col: anchor.col + o.col * t };
+    const g = { row: anchor.row + o.row, col: anchor.col + o.col };
     let overlap = false;
     for (const n of otherNodes) {
       if (sameCell(n, anchor)) continue;

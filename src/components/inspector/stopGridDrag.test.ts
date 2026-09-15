@@ -7,6 +7,7 @@ import {
   nudgeTarget,
   sameCell,
   DRAG_GRID_RADIUS,
+  GHOST_SNAP_RADIUS,
   type WidthNode,
 } from './stopGridDrag';
 import { STOP_SIZE } from '../../geometry/orientation';
@@ -638,5 +639,93 @@ describe('ghost slots are exact at every station rotation', () => {
         expect(Number.isInteger(target.col)).toBe(true);
       }
     }
+  });
+});
+
+describe('beyond ring 1 the lattice steps at the anchor’s own pitch', () => {
+  // Apodemus Memorial Park: a 6.5-wide, gap-2 LRT stop dragged off a width-12
+  // metro anchor. Ring 1 is the pair's packed pitch (11.25). Ring 2 leaves ONE
+  // metro-sized slot (12) empty, so "C _ 6" here lines up with "C E 6" at the
+  // next station — not two pair pitches (22.5), which matched nothing.
+  const METRO: WidthNode = { row: 0, col: 0, w: 12 };
+  const RIGHT = { row: 0, col: 1 };
+  const has = (ghosts: RowCol[], col: number) => ghosts.some((g) => sameCell(g, { row: 0, col }));
+
+  it('an empty slot is anchor-sized', () => {
+    const ghosts = computeGhosts({
+      wSrc: 6.5,
+      gSrc: 2,
+      anchor: METRO,
+      otherNodes: [METRO],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 3,
+    });
+    expect(has(ghosts, 11.25 / 14)).toBe(true);
+    expect(has(ghosts, (12 + 11.25) / 14)).toBe(true);
+    expect(has(ghosts, (24 + 11.25) / 14)).toBe(true);
+    expect(has(ghosts, 22.5 / 14)).toBe(false);
+  });
+
+  it('the label two slots out leaves room for one more stop of the anchor’s line', () => {
+    const ghosts = computeGhosts({
+      wSrc: STOP_SIZE,
+      gSrc: 0,
+      srcIsPoint: true,
+      anchor: METRO,
+      otherNodes: [METRO],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 2,
+    });
+    expect(has(ghosts, 13 / 14)).toBe(true);
+    expect(has(ghosts, 25 / 14)).toBe(true);
+    expect(has(ghosts, 26 / 14)).toBe(false);
+  });
+
+  it('a hosted anchor rides the stop’s pitch on every ring, as before', () => {
+    const ghosts = computeGhosts({
+      wSrc: STOP_SIZE,
+      gSrc: 0,
+      srcIsPoint: true,
+      srcOnAnchorPitch: true,
+      anchor: METRO,
+      otherNodes: [METRO],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 2,
+    });
+    expect(has(ghosts, 12 / 14)).toBe(true);
+    expect(has(ghosts, 24 / 14)).toBe(true);
+  });
+
+  it('a drag drops the thin stop one metro slot past its anchor', () => {
+    const cursor = { row: 0, col: 23.6 / 14 };
+    const { ghosts } = dragLattice({
+      cursor,
+      wSrc: 6.5,
+      gSrc: 2,
+      otherNodes: [METRO],
+      basis: 'orthogonal',
+      stationRotation: 0,
+    });
+    const over = findDropTarget(cursor, { kind: 'stop', lineId: 'six' }, [], ghosts, {
+      swapRadius: 0.6,
+      snapRadius: GHOST_SNAP_RADIUS,
+    });
+    expect(over && sameCell(over, { row: 0, col: 23.25 / 14 })).toBe(true);
+  });
+
+  it('a nudge outward hops one metro slot, not one pair pitch', () => {
+    const target = nudgeTarget({
+      source: { row: 0, col: 11.25 / 14 },
+      wSrc: 6.5,
+      gSrc: 2,
+      otherNodes: [METRO],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      arrow: RIGHT,
+    });
+    expect(target && sameCell(target, { row: 0, col: 23.25 / 14 })).toBe(true);
   });
 });

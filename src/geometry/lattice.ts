@@ -27,17 +27,61 @@ export const sameCell = (a: RowCol, b: RowCol): boolean =>
 export type LatticeBasis = 'orthogonal' | 'diagonal';
 
 /**
+ * Radial pitch of a lattice, in the offsets' own units: along each generator
+ * ring 1 sits at `first`, and every ring beyond it `step` further out. The two
+ * agree for a uniform lattice — `UNIT_PITCH` is the plain integer / k·√2/2
+ * cells. They part when the node being placed packs against the anchor at one
+ * distance (its pair tangency) while the anchor's OWN line packs at another:
+ * ring 1 is where the moving node touches the anchor, and each ring past it is
+ * one more stop OF THE ANCHOR'S LINE left empty. So a thin stop dropped two
+ * rings from a metro anchor leaves exactly one metro-sized slot — the slot a
+ * metro stop fills at the next station — and `C _ 6` there lines up with
+ * `C E 6` here. Scaling every ring by the pair tangency instead put that stop
+ * two THIN pitches out, a spacing no neighbor station shares.
+ */
+export type LatticePitch = { first: number; step: number };
+export const UNIT_PITCH: LatticePitch = { first: 1, step: 1 };
+
+// The unit lattice cell at generator coefficients (a, b): the integers
+// themselves in the orthogonal basis; a·NE + b·SE in the diagonal one, with
+// NE = (-√2/2, +√2/2) and SE = (+√2/2, +√2/2):
+//   dRow = a·(-√2/2) + b·(+√2/2) = (b - a)·√2/2
+//   dCol = a·(+√2/2) + b·(+√2/2) = (a + b)·√2/2
+const unitCell = (basis: LatticeBasis, a: number, b: number): RowCol =>
+  basis === 'orthogonal' ? { row: a, col: b } : { row: (b - a) * SQRT2_2, col: (a + b) * SQRT2_2 };
+
+/**
+ * The unit-lattice coordinate of a distance `d` along one generator — the
+ * inverse of the ring spacing, linear inside ring 1 and `step`-paced beyond
+ * it — so rounding it lands on the nearest ring. A uniform pitch short-circuits
+ * to the plain quotient: the same number, and the same tie-breaks, the unit
+ * lattice's callers always rounded.
+ */
+const unitCoord = (d: number, p: LatticePitch): number => {
+  if (p.first === p.step) return d / p.step;
+  const m = Math.abs(d);
+  return m <= p.first ? d / p.first : Math.sign(d) * (1 + (m - p.first) / p.step);
+};
+
+/**
  * The integer coefficients of the lattice point nearest `d`, a delta in the
  * same (row, col) space the offsets come back in. Both bases are ORTHONORMAL —
  * 'orthogonal' trivially, and 'diagonal' because NE and SE are perpendicular
  * unit vectors — so rounding each coefficient on its own lands on the nearest
  * point, with no lattice search.
  */
-function nearestCoeffs(basis: LatticeBasis, d: RowCol): [a: number, b: number] {
-  if (basis === 'orthogonal') return [Math.round(d.row), Math.round(d.col)];
-  // Inverting the diagonal generators below: row = (b − a)·√2/2 and
-  // col = (a + b)·√2/2, so a = (col − row) / (2·√2/2) and b = (col + row) / (2·√2/2).
-  return [Math.round((d.col - d.row) / (2 * SQRT2_2)), Math.round((d.col + d.row) / (2 * SQRT2_2))];
+function nearestCoeffs(
+  basis: LatticeBasis,
+  d: RowCol,
+  pitch: LatticePitch,
+): [a: number, b: number] {
+  // Inverting the diagonal generators: row = (b − a)·√2/2 and col = (a + b)·√2/2,
+  // so a = (col − row) / (2·√2/2) and b = (col + row) / (2·√2/2).
+  const [u, v] =
+    basis === 'orthogonal'
+      ? [d.row, d.col]
+      : [(d.col - d.row) / (2 * SQRT2_2), (d.col + d.row) / (2 * SQRT2_2)];
+  return [Math.round(unitCoord(u, pitch)), Math.round(unitCoord(v, pitch))];
 }
 
 /**
@@ -52,24 +96,33 @@ function nearestCoeffs(basis: LatticeBasis, d: RowCol): [a: number, b: number] {
  * where the origin's lattice puts them. The origin exclusion does NOT travel
  * with the window — a slid window that reaches back over the origin still
  * omits it, and offers its own center like any other cell.
+ *
+ * `pitch` spaces the rings (see `LatticePitch`); `center` is read in the same
+ * pitched units the offsets come back in.
  */
-export function latticeOffsets(basis: LatticeBasis, radius: number, center?: RowCol): RowCol[] {
+export function latticeOffsets(
+  basis: LatticeBasis,
+  radius: number,
+  center?: RowCol,
+  pitch: LatticePitch = UNIT_PITCH,
+): RowCol[] {
   const out: RowCol[] = [];
   // Fold the shift into the loop bounds rather than adding it to the emitted
   // cells: every offset then still comes out of the SAME single multiplication
   // that keeps it exactly an integer or exactly k·√2/2 (see below).
-  const [ca, cb] = center ? nearestCoeffs(basis, center) : [0, 0];
+  const [ca, cb] = center ? nearestCoeffs(basis, center, pitch) : [0, 0];
+  // Ring k along a generator sits at k·step + sgn(k)·(first − step): the unit
+  // lattice scaled by `step`, plus a ring-1 bump that is a literal ±0 whenever
+  // the two pitches agree. So a uniform pitch is bit-identical to scaling the
+  // unit cells, and the unit pitch emits them untouched — exactly an integer
+  // or exactly k·√2/2, which is what keeps a stored cell on a lattice point.
+  const bump = pitch.first - pitch.step;
   for (let a = ca - radius; a <= ca + radius; a++) {
     for (let b = cb - radius; b <= cb + radius; b++) {
       if (a === 0 && b === 0) continue;
-      if (basis === 'orthogonal') {
-        out.push({ row: a, col: b });
-      } else {
-        // a·NE + b·SE with NE = (-√2/2, +√2/2), SE = (+√2/2, +√2/2):
-        //   dRow = a·(-√2/2) + b·(+√2/2) = (b - a)·√2/2
-        //   dCol = a·(+√2/2) + b·(+√2/2) = (a + b)·√2/2
-        out.push({ row: (b - a) * SQRT2_2, col: (a + b) * SQRT2_2 });
-      }
+      const u = unitCell(basis, a, b);
+      const s = unitCell(basis, Math.sign(a), Math.sign(b));
+      out.push({ row: u.row * pitch.step + s.row * bump, col: u.col * pitch.step + s.col * bump });
     }
   }
   return out;
@@ -107,6 +160,7 @@ export function localLatticeOffsets(
   radius: number,
   rotation: Rotation,
   center?: RowCol,
+  pitch?: LatticePitch,
 ): RowCol[] {
-  return latticeOffsets(rotation % 2 === 0 ? basis : OTHER_BASIS[basis], radius, center);
+  return latticeOffsets(rotation % 2 === 0 ? basis : OTHER_BASIS[basis], radius, center, pitch);
 }
