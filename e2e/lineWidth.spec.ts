@@ -62,8 +62,9 @@ const twoStop: Seed = {
 // Legacy interlined pair: both default width, stops 1 row apart (tangent at
 // 14/14). Widening L2 to 28 re-packs the stops to the mixed tangent gap
 // (21 units, centroid preserved: rows −0.25 / 1.25), so the band STAYS
-// merged; the layout editor's width-scaled ghost lattice can then drag the
-// pair out of tangency (split) and back (re-merge).
+// merged; the layout editor's ghost lattice (ring 1 at the pair's tangency,
+// further rings at the anchor's own pitch) can then drag the pair out of
+// tangency (split) and back (re-merge).
 const legacyInterlined: Seed = {
   stations: [
     {

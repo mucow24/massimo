@@ -257,6 +257,22 @@ describe('latticeOffsets — radial pitch', () => {
     expect(includesClose(exact, { row: 0, col: PITCH.first })).toBe(true);
   });
 
+  it('windows a diagonal-basis center onto the pitched lattice', () => {
+    // The diagonal inversion runs through the same pitched coordinate as the
+    // orthogonal one: along the NE generator the ring-1/ring-2 midpoint sits
+    // at first + step/2 (17.25 units), NOT at 1.5 pair pitches (16.875). A
+    // center at 17 units is past the latter but short of the former, so it
+    // must window on ring 1; one just past 17.25 windows on ring 2.
+    const ne = (k: number) => ({ row: -k * HALF_SQRT2, col: k * HALF_SQRT2 });
+    const onRing1 = latticeOffsets('diagonal', 1, ne(PITCH.first), PITCH);
+    const onRing2 = latticeOffsets('diagonal', 1, ne(ring2), PITCH);
+    expect(keys(onRing1)).not.toEqual(keys(onRing2));
+    expect(keys(latticeOffsets('diagonal', 1, ne(17 / 14), PITCH))).toEqual(keys(onRing1));
+    expect(keys(latticeOffsets('diagonal', 1, ne(17.5 / 14), PITCH))).toEqual(keys(onRing2));
+    expect(includesClose(onRing2, ne(ring2))).toBe(true);
+    expect(includesClose(onRing2, ne(ring2 + PITCH.step))).toBe(true);
+  });
+
   it('a uniform pitch is bit-identical to scaling the unit lattice', () => {
     // What every ring used to be: the unit lattice times one pair pitch. A
     // lattice whose two pitches agree must still be exactly that, so existing
