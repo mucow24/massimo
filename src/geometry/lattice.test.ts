@@ -217,3 +217,81 @@ describe('localLatticeOffsets', () => {
     }
   });
 });
+
+describe('latticeOffsets — radial pitch', () => {
+  // A thin stop packed against a width-12 anchor (11.25 units) walking that
+  // anchor's own 12-unit lattice, in cells.
+  const PITCH = { first: 11.25 / 14, step: 12 / 14 };
+  const ring2 = PITCH.first + PITCH.step;
+
+  it('ring 1 sits at `first`; every ring beyond it steps by `step`', () => {
+    const ps = latticeOffsets('orthogonal', 3, undefined, PITCH);
+    expect(includesClose(ps, { row: 0, col: PITCH.first })).toBe(true);
+    expect(includesClose(ps, { row: 0, col: ring2 })).toBe(true);
+    expect(includesClose(ps, { row: -(ring2 + PITCH.step), col: 0 })).toBe(true);
+    // Not the uniformly scaled lattice: ring 2 is one ANCHOR slot out, not
+    // two pair pitches.
+    expect(includesClose(ps, { row: 0, col: 2 * PITCH.first })).toBe(false);
+  });
+
+  it('applies per generator in the diagonal basis', () => {
+    const ps = latticeOffsets('diagonal', 2, undefined, PITCH);
+    const ne = (k: number) => ({ row: -k * HALF_SQRT2, col: k * HALF_SQRT2 });
+    expect(includesClose(ps, ne(PITCH.first))).toBe(true);
+    expect(includesClose(ps, ne(ring2))).toBe(true);
+    // NE + SE: each generator at its own ring 1.
+    expect(includesClose(ps, { row: 0, col: 2 * PITCH.first * HALF_SQRT2 })).toBe(true);
+  });
+
+  it('windows the center onto the pitched lattice', () => {
+    const exact = latticeOffsets('orthogonal', 1, { row: 0, col: ring2 }, PITCH);
+    const near = latticeOffsets(
+      'orthogonal',
+      1,
+      { row: 0.1, col: ring2 + 0.3 * PITCH.step },
+      PITCH,
+    );
+    expect(keys(near)).toEqual(keys(exact));
+    expect(includesClose(exact, { row: 0, col: ring2 })).toBe(true);
+    expect(includesClose(exact, { row: 0, col: ring2 + PITCH.step })).toBe(true);
+    expect(includesClose(exact, { row: 0, col: PITCH.first })).toBe(true);
+  });
+
+  it('windows a diagonal-basis center onto the pitched lattice', () => {
+    // The diagonal inversion runs through the same pitched coordinate as the
+    // orthogonal one: along the NE generator the ring-1/ring-2 midpoint sits
+    // at first + step/2 (17.25 units), NOT at 1.5 pair pitches (16.875). A
+    // center at 17 units is past the latter but short of the former, so it
+    // must window on ring 1; one just past 17.25 windows on ring 2.
+    const ne = (k: number) => ({ row: -k * HALF_SQRT2, col: k * HALF_SQRT2 });
+    const onRing1 = latticeOffsets('diagonal', 1, ne(PITCH.first), PITCH);
+    const onRing2 = latticeOffsets('diagonal', 1, ne(ring2), PITCH);
+    expect(keys(onRing1)).not.toEqual(keys(onRing2));
+    expect(keys(latticeOffsets('diagonal', 1, ne(17 / 14), PITCH))).toEqual(keys(onRing1));
+    expect(keys(latticeOffsets('diagonal', 1, ne(17.5 / 14), PITCH))).toEqual(keys(onRing2));
+    expect(includesClose(onRing2, ne(ring2))).toBe(true);
+    expect(includesClose(onRing2, ne(ring2 + PITCH.step))).toBe(true);
+  });
+
+  it('a uniform pitch is bit-identical to scaling the unit lattice', () => {
+    // What every ring used to be: the unit lattice times one pair pitch. A
+    // lattice whose two pitches agree must still be exactly that, so existing
+    // uniform-width layouts keep landing on the same bits.
+    for (const t of [1, 12 / 14, 11.25 / 14]) {
+      for (const basis of ['orthogonal', 'diagonal'] as const) {
+        for (const r of [0, 1, 2, 3, 4, 5, 6, 7] as const) {
+          const unit = localLatticeOffsets(basis, 2, r, { row: 5, col: -3 });
+          const scaled = unit.map((o) => ({ row: o.row * t, col: o.col * t }));
+          const pitched = localLatticeOffsets(
+            basis,
+            2,
+            r,
+            { row: 5 * t, col: -3 * t },
+            { first: t, step: t },
+          );
+          expect(pitched).toEqual(scaled);
+        }
+      }
+    }
+  });
+});

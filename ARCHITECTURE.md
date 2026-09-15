@@ -4442,19 +4442,25 @@ the two keys is a stale picture on one side or a stale arrangement on the other.
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
   `findDropTarget`, `nudgeTarget`, all choosing their lattice in screen terms and reading it back
   in station-local cells via `localLatticeOffsets`). Slots hang off an **anchor** node — the
-  station node nearest the cursor — for pitch and phase. During a drag the WINDOW of slots rides
-  on the CURSOR at `DRAG_GRID_RADIUS` (a 5×5 block; `computeGhosts`' `center`, `latticeOffsets`'
-  window shift), so the slots always surround the pointer and a move of any length lands in one
-  gesture. A keyboard nudge has no pointer, so it rides the moving node's own cell at the wider
-  `GRID_RADIUS`, far enough for one press to clear a run of packed neighbors (a label hops past two
-  tangent stops to the free slot beyond). Sliding the window never moves the lattice, so ring-1
-  tangency and the anchor's axes survive, and a node sitting off-lattice heals when the window
-  snaps to the nearest lattice point. The anchor's own cell is never a slot. While a drag is live
-  the moving node's static handle is HIDDEN — it rides the cursor as the white ghost lattice plus,
-  on the snapped slot, its OWN handle in the selected state (`LayoutNodeHandle`, the one component
-  both the editor and the drop preview paint every node with, so the preview is the node as it will
-  land). The projection anchor the lattice comes from is painted amber instead of white, marking the
-  origin the slots hang off.
+  station node nearest the cursor — for pitch and phase. The lattice has TWO pitches
+  (`LatticePitch`): ring 1 sits where the moving node packs against the anchor (its pair
+  tangency, or the anchor's own pitch for a hosted anchor), and every ring beyond steps at the
+  anchor's OWN packing pitch — one more stop of the anchor's line left empty. That is what makes
+  an empty slot anchor-sized: a thin stop two rings off a metro anchor lands where it would past a
+  metro stop, so `C _ 6` at one station lines up with `C E 6` at the next. Scaling every ring by
+  the pair tangency put it two thin pitches out, a spacing no neighbor shared. During a drag the
+  WINDOW of slots rides on the CURSOR at `DRAG_GRID_RADIUS` (a 5×5 block; `computeGhosts`'
+  `center`, `latticeOffsets`' window shift), so the slots always surround the pointer and a move
+  of any length lands in one gesture. A keyboard nudge has no pointer, so it rides the moving
+  node's own cell at the wider `GRID_RADIUS`, far enough for one press to clear a run of packed
+  neighbors (a label hops past two tangent stops to the free slot beyond). Sliding the window
+  never moves the lattice, so ring-1 tangency and the anchor's axes survive, and a node sitting
+  off-lattice heals when the window snaps to the nearest lattice point. The anchor's own cell is
+  never a slot. While a drag is live the moving node's static handle is HIDDEN — it rides the
+  cursor as the white ghost lattice plus, on the snapped slot, its OWN handle in the selected state
+  (`LayoutNodeHandle`, the one component both the editor and the drop preview paint every node
+  with, so the preview is the node as it will land). The projection anchor the lattice comes from
+  is painted amber instead of white, marking the origin the slots hang off.
   Two surfaces:
   1. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
      - [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered by

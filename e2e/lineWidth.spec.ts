@@ -62,8 +62,9 @@ const twoStop: Seed = {
 // Legacy interlined pair: both default width, stops 1 row apart (tangent at
 // 14/14). Widening L2 to 28 re-packs the stops to the mixed tangent gap
 // (21 units, centroid preserved: rows −0.25 / 1.25), so the band STAYS
-// merged; the layout editor's width-scaled ghost lattice can then drag the
-// pair out of tangency (split) and back (re-merge).
+// merged; the layout editor's ghost lattice (ring 1 at the pair's tangency,
+// further rings at the anchor's own pitch) can then drag the pair out of
+// tangency (split) and back (re-merge).
 const legacyInterlined: Seed = {
   stations: [
     {
@@ -217,8 +218,10 @@ test.describe('Per-line width', () => {
     await page.keyboard.press('Escape');
 
     // The layout editor still owns deliberate spacing: dragging L2's stop one
-    // width-scaled lattice ring outward (pitch = tangentGap(28, 14) / 14 =
-    // 1.5 cells, so 1.25 → 2.75) at both stations SPLITS the band…
+    // lattice ring outward at both stations SPLITS the band… Ring 1 is the
+    // pair tangency (tangentGap(28, 14) / 14 = 1.5 cells, the 1.25 it sits
+    // on); every ring past it steps at the ANCHOR's own pitch (L1's 1 cell),
+    // so ring 2 is 1.25 → 2.25 — one empty L1-sized slot, not another 1.5.
     // Layout-edit mode is entered once on A; clicking B while the mode is
     // active RETARGETS the editor to it (layoutEditReconcile), so the popover
     // already reads Done — no second Edit layout click.
@@ -233,7 +236,7 @@ test.describe('Per-line width', () => {
       await dragStopByLocalDelta(
         page,
         '[data-cell-row="1.25"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L2"]',
-        1.5,
+        1,
         0,
       );
     }
@@ -246,8 +249,8 @@ test.describe('Per-line width', () => {
       await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
       await dragStopByLocalDelta(
         page,
-        '[data-cell-row="2.75"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L2"]',
-        -1.5,
+        '[data-cell-row="2.25"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L2"]',
+        -1,
         0,
       );
     }
