@@ -2974,6 +2974,12 @@ button.field-select > :not(.field-select-caret) {
   flex: none;
   gap: 6px;
 }
+/* Sets the library-wide pair (backup out, backup in) a little apart from the
+   star filter beside it, which is about one column. */
+.dialog-colhead-gap {
+  flex: none;
+  width: 8px;
+}
 /* The filter's state in words. The named empty message only speaks when
    NOTHING survives the filter, which is the case that needs it least — five
    rows showing where twelve were is what reads as a library that lost

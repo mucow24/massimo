@@ -275,7 +275,8 @@ src/
                                 #   without dragging the panel's whole tree in behind two facts
     BrandBullet.tsx             # the wordmark: an "M" route bullet (black disc/white M; night
                                 #   inverts) — the toolbar badge, reused by the easter-egg ball
-    MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
+    MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog), and the
+                                #   whole-library backup file out and in
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell;
                                 #   New… mints either kind, rows show which by their swatch SHAPE)
     PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
@@ -2057,6 +2058,15 @@ via Map → Save version and Map → Load → From library…
   pattern). `listMaps` itself keeps returning newest-touched first; the dialog applies `sortMaps`,
   then the filter — so a filtered list keeps the chosen order. The selected map is looked up
   **before** the filter, so hiding its row never blanks the versions column beside it.
+- **Backup** (`exportLibrary` / `importLibrary` / `parseLibraryBackup`): the whole library as one
+  JSON file — every map row with its versions and their payloads, verbatim, ids left out — and
+  back, from the two buttons beside the versions column's star filter. Ids are dropped on the way
+  out and minted on the way in, so a restore only ever **adds** maps: restoring into a library
+  that still holds the originals doubles them rather than merging, and nothing in a file can
+  overwrite a row. Version numbers and each map's `nextVersion` travel as they are, so a restored
+  map's handles are its history's own and its counter keeps climbing from where it was. The
+  import is one transaction — all of it lands or none of it does. Not an export door in the
+  `auditExportDoc` sense: nothing is serialized from the live doc, only stored bytes copied out.
 - **The pointer lives outside both** ([libraryPointer.ts](src/state/libraryPointer.ts)).
   `useLibraryPointer` holds `{ mapId, version }` — which library map this **tab** is on, and which
   version its document **came from** (not a claim about the canvas now: edit after opening v32 and

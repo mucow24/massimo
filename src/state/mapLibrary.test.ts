@@ -753,4 +753,136 @@ describe('mapLibrary', () => {
   it('mints a fresh unique map id', () => {
     expect(lib.newMapId()).not.toBe(lib.newMapId());
   });
+
+  /**
+   * The whole library as one file, and back. A restore only ever ADDS: every
+   * map in the file lands under a freshly minted id, so restoring into a
+   * library that still holds the originals doubles them rather than merging —
+   * which is the dumb, safe reading of "archival".
+   */
+  describe('backup', () => {
+    /** Two maps with a history worth keeping: a named, starred user version
+     *  under an auto, and a starred map row. */
+    const seed = async () => {
+      const a1 = await lib.saveVersion('m1', 'A', json('a1'), 'user', 'data:thumb-a1');
+      await lib.saveVersion('m1', 'A', json('a2'), 'auto');
+      await lib.setVersionName(a1.id, 'beta 1');
+      await lib.setVersionStarred(a1.id, true);
+      await lib.setMapStarred('m1', true);
+      await lib.saveVersion('m2', 'B', json('b1'), 'user');
+    };
+    const strip = ({ id: _id, mapId: _mapId, ...rest }: import('./mapLibrary').VersionMeta) => rest;
+
+    it('restores every map, version and payload under new ids', async () => {
+      await seed();
+      const backup = await lib.exportLibrary();
+      expect(await lib.importLibrary(backup)).toBe(2);
+
+      const maps = await lib.listMaps();
+      expect(maps).toHaveLength(4);
+      const copies = maps.filter((m) => m.id !== 'm1' && m.id !== 'm2');
+      expect(copies.map((m) => m.name).sort()).toEqual(['A', 'B']);
+
+      const original = maps.find((m) => m.id === 'm1')!;
+      const copy = copies.find((m) => m.name === 'A')!;
+      expect(copy.starred).toBe(true);
+      expect(copy.createdAt).toBe(original.createdAt);
+      expect(copy.updatedAt).toBe(original.updatedAt);
+      expect(copy.versionCount).toBe(2);
+
+      // Same rows in the same order — source, number, name, star, thumb and
+      // timestamp — only the ids differ.
+      const originals = await lib.listVersions('m1');
+      const restored = await lib.listVersions(copy.id);
+      expect(restored.map(strip)).toEqual(originals.map(strip));
+      expect(restored.map((v) => v.id)).not.toEqual(originals.map((v) => v.id));
+      for (let i = 0; i < originals.length; i++) {
+        expect(await lib.getPayload(restored[i].id)).toBe(await lib.getPayload(originals[i].id));
+      }
+      // The originals are untouched by the restore.
+      expect(originals.map((v) => v.version)).toEqual([2, 1]);
+    });
+
+    it('a restored map keeps counting where the original left off', async () => {
+      await lib.saveVersion('m1', 'A', json('1'), 'user');
+      const v2 = await lib.saveVersion('m1', 'A', json('2'), 'user');
+      await lib.deleteVersion(v2.id); // v2 is spent; max(version)+1 would re-issue it
+      await lib.importLibrary(await lib.exportLibrary());
+      const copy = (await lib.listMaps()).find((m) => m.id !== 'm1')!;
+      expect((await lib.saveVersion(copy.id, 'A', json('3'), 'user')).version).toBe(3);
+    });
+
+    it('restoring the same file twice adds two more copies', async () => {
+      await lib.saveVersion('m1', 'A', json('1'), 'user');
+      const backup = await lib.exportLibrary();
+      await lib.importLibrary(backup);
+      await lib.importLibrary(backup);
+      expect((await lib.listMaps()).map((m) => m.name)).toEqual(['A', 'A', 'A']);
+    });
+
+    it('round-trips through the file text', async () => {
+      await seed();
+      const backup = await lib.exportLibrary();
+      const result = lib.parseLibraryBackup(JSON.stringify(backup));
+      expect(result).toEqual({ ok: true, backup });
+    });
+
+    it('refuses text that is not a library backup', async () => {
+      expect(lib.parseLibraryBackup('nope').ok).toBe(false);
+      expect(lib.parseLibraryBackup('{"format":"massimo-map","version":2}')).toEqual({
+        ok: false,
+        error: 'Not a massimo library backup file',
+      });
+      // A map file's shape with the right stamp: the row would render blank
+      // and the counter would be NaN, so the gate refuses it whole.
+      expect(
+        lib.parseLibraryBackup(
+          JSON.stringify({
+            format: 'massimo-library-backup',
+            version: 1,
+            maps: [{ versions: [] }],
+          }),
+        ).ok,
+      ).toBe(false);
+      expect(
+        lib.parseLibraryBackup(
+          JSON.stringify({
+            format: 'massimo-library-backup',
+            version: 1,
+            maps: [
+              {
+                name: 'A',
+                createdAt: 1,
+                updatedAt: 2,
+                nextVersion: 2,
+                versions: [{ savedAt: 2, source: 'user', version: 1 }], // no json
+              },
+            ],
+          }),
+        ).ok,
+      ).toBe(false);
+    });
+
+    it('a restore that aborts midway writes nothing', async () => {
+      await seed();
+      const backup = await lib.exportLibrary();
+      const { IDBObjectStore } = await import('fake-indexeddb');
+      const realPut = IDBObjectStore.prototype.put;
+      const spy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+        this: IDBObjectStore,
+        value: unknown,
+        key?: IDBValidKey,
+      ) {
+        const req = realPut.call(this, value, key);
+        // Abort once the first payload lands — a map row and its version rows
+        // are already in the transaction by then.
+        if (this.name === 'payloads')
+          req.addEventListener('success', () => req.transaction?.abort());
+        return req;
+      });
+      await expect(lib.importLibrary(backup)).rejects.toThrow();
+      spy.mockRestore();
+      expect((await lib.listMaps()).map((m) => m.id).sort()).toEqual(['m1', 'm2']);
+    });
+  });
 });

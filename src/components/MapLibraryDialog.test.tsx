@@ -17,6 +17,14 @@ vi.mock('../state/mapLibrary', async (importOriginal) => ({
   setVersionName: vi.fn(async () => {}),
   setVersionStarred: vi.fn(async () => {}),
   setMapStarred: vi.fn(async () => {}),
+  exportLibrary: vi.fn(async () => ({})),
+  importLibrary: vi.fn(async () => 0),
+}));
+// Exporting a backup downloads a file; jsdom has no download, and the real
+// helper touches URL.createObjectURL.
+vi.mock('../export/exportCanvas', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../export/exportCanvas')>()),
+  downloadBlob: vi.fn(),
 }));
 
 import { MapLibraryDialog } from './MapLibraryDialog';
@@ -29,9 +37,13 @@ import {
   setVersionName,
   setVersionStarred,
   setMapStarred,
+  exportLibrary,
+  importLibrary,
+  type LibraryBackup,
   type MapSummary,
   type VersionMeta,
 } from '../state/mapLibrary';
+import { downloadBlob } from '../export/exportCanvas';
 // NOT mocked: plain zustand + localStorage stores, which jsdom runs happily.
 import { useLibraryPointer } from '../state/libraryPointer';
 import { useLibraryPrefs } from '../state/libraryPrefs';
@@ -142,6 +154,9 @@ beforeEach(() => {
   vi.mocked(setVersionName).mockReset().mockResolvedValue(undefined);
   vi.mocked(setVersionStarred).mockReset().mockResolvedValue(undefined);
   vi.mocked(setMapStarred).mockReset().mockResolvedValue(undefined);
+  vi.mocked(exportLibrary).mockReset();
+  vi.mocked(importLibrary).mockReset().mockResolvedValue(0);
+  vi.mocked(downloadBlob).mockReset();
   onClose.mockClear();
   onOpenVersion.mockClear();
   onOpenDraft.mockClear();
@@ -1079,6 +1094,108 @@ describe('MapLibraryDialog', () => {
       // The fixture versions carry no thumb: the placeholder is inert.
       expect(document.querySelector('.map-library-versions img.map-thumb')).toBeNull();
       expect(document.querySelector('.map-thumb-preview')).toBeNull();
+    });
+  });
+
+  /**
+   * The whole library out to one JSON file, and back in as new maps. Both
+   * commands sit in the Versions head beside its star filter; the storage
+   * halves are the library's own (`exportLibrary` / `importLibrary`), so what
+   * is pinned here is the wiring: the download, the file gate, the re-list.
+   */
+  describe('library backup', () => {
+    const BACKUP: LibraryBackup = {
+      format: 'massimo-library-backup',
+      version: 1,
+      exportedAt: Date.parse('2026-09-16T10:00:00Z'),
+      maps: [
+        {
+          name: 'Archive',
+          createdAt: 1,
+          updatedAt: 2,
+          nextVersion: 2,
+          versions: [{ savedAt: 2, source: 'user', version: 1, json: '{"format":"massimo-map"}' }],
+        },
+      ],
+    };
+    const exportButton = () => screen.getByRole('button', { name: 'Export backup' });
+    const importInput = () => screen.getByLabelText('Import library backup file');
+    const backupFile = (body: unknown, name = 'library.json') =>
+      new File([JSON.stringify(body)], name, { type: 'application/json' });
+
+    it('both commands stand in the Versions head', async () => {
+      renderDialog();
+      await screen.findByText('Canal Line');
+      const head = within(screen.getByRole('region', { name: 'Versions' }));
+      expect(head.getByRole('button', { name: 'Export backup' })).toBeInTheDocument();
+      expect(head.getByRole('button', { name: 'Import backup…' })).toBeInTheDocument();
+    });
+
+    it('Export downloads the whole library as one JSON file', async () => {
+      const user = userEvent.setup();
+      vi.mocked(exportLibrary).mockResolvedValue(BACKUP);
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.click(exportButton());
+      await waitFor(() => expect(downloadBlob).toHaveBeenCalledTimes(1));
+      const [blob, filename] = vi.mocked(downloadBlob).mock.calls[0];
+      expect(filename).toMatch(/^massimo library - \d{4}-\d{2}-\d{2}\.json$/);
+      expect(JSON.parse(await (blob as Blob).text())).toEqual(BACKUP);
+    });
+
+    it('reports an export the library could not be read for', async () => {
+      const user = userEvent.setup();
+      vi.mocked(exportLibrary).mockRejectedValue(new Error('boom'));
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.click(exportButton());
+      expect(await screen.findByRole('alert')).toHaveTextContent(/could not read/i);
+      expect(downloadBlob).not.toHaveBeenCalled();
+    });
+
+    it('Import adds every map in the file, says how many, and re-lists', async () => {
+      const user = userEvent.setup();
+      vi.mocked(importLibrary).mockResolvedValue(1);
+      renderDialog();
+      await screen.findByText('Canal Line');
+      vi.mocked(listMaps).mockClear();
+      await user.upload(importInput(), backupFile(BACKUP));
+      await waitFor(() => expect(importLibrary).toHaveBeenCalledWith(BACKUP));
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Imported 1 map from “library.json”',
+      );
+      await waitFor(() => expect(listMaps).toHaveBeenCalled());
+    });
+
+    it('refuses a file that is not a library backup, importing nothing', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.upload(importInput(), backupFile({ format: 'massimo-map', version: 2 }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Not a massimo library backup');
+      expect(importLibrary).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a backup file that cannot be read', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      const unreadable = backupFile(BACKUP);
+      Object.defineProperty(unreadable, 'text', {
+        value: () => Promise.reject(new Error('NotReadableError')),
+      });
+      await user.upload(importInput(), unreadable);
+      expect(await screen.findByRole('alert')).toHaveTextContent(/could not be read/i);
+      expect(importLibrary).not.toHaveBeenCalled();
+    });
+
+    it('reports a restore the library refused', async () => {
+      const user = userEvent.setup();
+      vi.mocked(importLibrary).mockRejectedValue(new Error('quota'));
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.upload(importInput(), backupFile(BACKUP));
+      expect(await screen.findByRole('alert')).toHaveTextContent(/could not import/i);
     });
   });
 });

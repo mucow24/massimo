@@ -2,10 +2,11 @@
  * The preamble every JSON DOOR runs before it can say anything about a
  * payload's shape: text → a plain object, or a refusal.
  *
- * There are three such doors — the map file (`parse`), the palette file
- * (`parseCustomPalette`) and the clipboard (`readClipboard`) — and until this
- * existed each spelled the same six lines out, two of them repeating the same
- * two user-facing strings verbatim. Which is the real cost: the wording a user
+ * There are four such doors — the map file (`parse`), the palette file
+ * (`parseCustomPalette`), the library backup (`parseLibraryBackup`) and the
+ * clipboard (`readClipboard`) — and until this existed the first three each
+ * spelled the same six lines out, two of them repeating the same two
+ * user-facing strings verbatim. Which is the real cost: the wording a user
  * sees when a file won't open is not a thing two modules should be able to
  * disagree about, and nothing was holding them together.
  *

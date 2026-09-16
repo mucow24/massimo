@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { closeMapMenu, openMapMenu, seedAndOpen, fourInLine } from './fixtures';
 
@@ -255,6 +256,40 @@ test('two maps may share a name', async ({ page }) => {
   await openLibrary(page);
   await expect(page.locator('.map-row')).toHaveCount(2);
   await expect(page.locator('.map-row strong')).toHaveText(['Untitled map', 'Untitled map']);
+});
+
+/**
+ * The library out to one file and back, over real IndexedDB and a real
+ * download: the bytes the picker reads are the bytes the export wrote, so the
+ * two halves are proven against each other rather than against a fixture.
+ */
+test('a library backup round-trips through a download and the file picker', async ({ page }) => {
+  await seedAndOpen(page, fourInLine);
+  await renameTo(page, 'Untitled map', 'Archived');
+  await saveToLibrary(page);
+
+  await openLibrary(page);
+  const downloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export backup' }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^massimo library - \d{4}-\d{2}-\d{2}\.json$/);
+  const path = await download.path();
+  if (!path) throw new Error('download has no path');
+
+  await page.getByLabel('Import library backup file').setInputFiles({
+    name: 'library.json',
+    mimeType: 'application/json',
+    buffer: readFileSync(path),
+  });
+  // Scoped: the save toast's live region is a `status` too.
+  const dialog = page.getByRole('dialog', { name: 'Map library' });
+  await expect(dialog.getByRole('status')).toHaveText('Imported 1 map from “library.json”.');
+  await expect(page.locator('.map-row strong')).toHaveText(['Archived', 'Archived']);
+
+  // The copy is a whole map — its one version came across with it.
+  await mapRow(page, 'Archived').nth(1).click();
+  await expect(page.locator('.version-row')).toHaveCount(1);
+  await expect(page.locator('.version-number')).toHaveText('v1');
 });
 
 /**

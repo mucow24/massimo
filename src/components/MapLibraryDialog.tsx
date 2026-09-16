@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as HoverCard from '@radix-ui/react-hover-card';
 import * as Toggle from '@radix-ui/react-toggle';
@@ -6,9 +6,12 @@ import { Cross2Icon, ExternalLinkIcon, StarIcon, StarFilledIcon } from '@radix-u
 import {
   deleteMap,
   deleteVersion,
+  exportLibrary,
+  importLibrary,
   listMaps,
   listVersions,
   newMapId,
+  parseLibraryBackup,
   renameMap,
   setMapStarred,
   setVersionName,
@@ -16,6 +19,7 @@ import {
   sortMaps,
   isMapSort,
   MAP_SORTS,
+  type LibraryBackup,
   type MapSort,
   type MapSummary,
   type VersionMeta,
@@ -33,6 +37,7 @@ import {
   removeMapKeys,
 } from '../state/mapKeys';
 import { DialogSortSelect } from './dialogRow';
+import { downloadBlob } from '../export/exportCanvas';
 
 interface Props {
   onClose: () => void;
@@ -223,7 +228,14 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
   /** Bumped to re-read the selected map's versions in place (see below). */
   const [versionsEpoch, setVersionsEpoch] = useState(0);
   const [versions, setVersions] = useState<VersionMeta[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // One message line, but a restored backup is NOT a failure and must not wear
+  // the red band a rejected file does — the palette manager's pattern.
+  const [message, setMessage] = useState<{ text: string; tone: 'error' | 'notice' } | null>(null);
+  const setError = useCallback(
+    (text: string | null) => setMessage(text === null ? null : { text, tone: 'error' }),
+    [],
+  );
+  const setNotice = useCallback((text: string) => setMessage({ text, tone: 'notice' }), []);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [namingVersionId, setNamingVersionId] = useState<number | null>(null);
@@ -241,7 +253,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
       setMaps([]);
       setError('Could not read the map library.');
     }
-  }, []);
+  }, [setError]);
 
   /**
    * Ask for a fresh read of the SELECTED map's versions — the map that is
@@ -278,7 +290,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
     return () => {
       live = false;
     };
-  }, [selectedMapId, versionsEpoch]);
+  }, [selectedMapId, versionsEpoch, setError]);
 
   // The first read. Guarded rather than calling refreshMaps: the dialog can be
   // dismissed while listMaps() is still in flight.
@@ -297,7 +309,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
     return () => {
       live = false;
     };
-  }, []);
+  }, [setError]);
 
   // Blanks the list, so the column never shows the previous map's versions
   // while the read for the new one is out. The refresh is what fetches them —
@@ -457,6 +469,64 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
     }
   };
 
+  /**
+   * The whole library out to one file — every map row, its versions and their
+   * payloads, verbatim. Not an export door in the `auditExportDoc` sense:
+   * nothing here is serialized from the live doc, so there is nothing new to
+   * audit, only bytes that already passed on their way in.
+   */
+  const onExportBackup = async () => {
+    setError(null);
+    let backup: LibraryBackup;
+    try {
+      backup = await exportLibrary();
+    } catch {
+      setError('Could not read the map library.');
+      return;
+    }
+    const date = new Date().toISOString().slice(0, 10);
+    downloadBlob(
+      new Blob([JSON.stringify(backup)], { type: 'application/json' }),
+      `massimo library - ${date}.json`,
+    );
+  };
+
+  const backupInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * A backup file back in: every map in it lands as a NEW map, so restoring
+   * into a library that still holds the originals doubles them rather than
+   * merging — the dumb, safe reading of archival. The rows keep their own
+   * timestamps, so a restored map sorts where its history puts it rather than
+   * jumping to the top; the notice is what says it landed.
+   */
+  const onImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!f) return;
+    let text: string;
+    try {
+      text = await f.text();
+    } catch {
+      setError(`“${f.name}” could not be read.`);
+      return;
+    }
+    const result = parseLibraryBackup(text);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    let added: number;
+    try {
+      added = await importLibrary(result.backup);
+    } catch {
+      setError('Could not import that backup.');
+      return;
+    }
+    setNotice(`Imported ${added} map${added === 1 ? '' : 's'} from “${f.name}”.`);
+    await refreshMaps();
+  };
+
   // Working copies whose map has no library row — a New drawn and closed on
   // before its first save. Reachable from nowhere else, so they are listed
   // here. The tab's own map is left out: with no row it is a New in progress,
@@ -517,9 +587,12 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
               </Dialog.Close>
             </header>
 
-            {error && (
-              <div role="alert" className="dialog-error">
-                {error}
+            {message && (
+              <div
+                role={message.tone === 'error' ? 'alert' : 'status'}
+                className={message.tone === 'error' ? 'dialog-error' : 'dialog-notice'}
+              >
+                {message.text}
               </div>
             )}
 
@@ -674,6 +747,34 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
                       label="Show starred versions only"
                       disabled={selectedMapId === null}
                       onToggle={setStarredVersionsOnly}
+                    />
+                    {/* The library as a whole, to and from one JSON file. Set a
+                        little apart: the star is about this column, these two
+                        are about everything. */}
+                    <span className="dialog-colhead-gap" aria-hidden="true" />
+                    <button
+                      type="button"
+                      className="dialog-colhead-btn"
+                      title="Export library backup — every map and version, as one JSON file"
+                      onClick={() => void onExportBackup()}
+                    >
+                      Export backup
+                    </button>
+                    <button
+                      type="button"
+                      className="dialog-colhead-btn"
+                      title="Import library backup — adds every map in the file as a new map"
+                      onClick={() => backupInputRef.current?.click()}
+                    >
+                      Import backup…
+                    </button>
+                    <input
+                      ref={backupInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      aria-label="Import library backup file"
+                      style={{ display: 'none' }}
+                      onChange={(e) => void onImportBackup(e)}
                     />
                   </div>
                 </div>

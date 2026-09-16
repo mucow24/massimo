@@ -17,6 +17,8 @@
  * the upgrade path below. Only the first is a library concept.
  */
 
+import { parseJsonObject } from '../util/json';
+
 const DB_NAME = 'massimo-library';
 /** IndexedDB's own schema stamp — NOT a map's version number. v1 shipped in #265. */
 const DB_SCHEMA_VERSION = 3;
@@ -564,4 +566,145 @@ export async function deleteVersion(versionId: number): Promise<void> {
 
 export function newMapId(): string {
   return globalThis.crypto.randomUUID();
+}
+
+// ---- Backup ------------------------------------------------------------------
+
+/** The stamp a library backup file carries. */
+export const LIBRARY_BACKUP_FORMAT = 'massimo-library-backup';
+
+/**
+ * The whole library as one file: every map row with its versions and their
+ * payloads, verbatim, ids left out. A row IS a file here too — a payload
+ * travels as the opaque string it was saved as, so a restore is exactly a save
+ * of those bytes, and `parse()` still owns everything about what is inside.
+ *
+ * Ids are dropped on the way out and minted on the way in, so a restore only
+ * ever ADDS maps: restoring into a library that still holds the originals
+ * doubles them rather than merging, and nothing in a file can overwrite a row
+ * here. Version numbers and each map's counter travel as they are, so a
+ * restored map's handles are the ones its history was told about — and the
+ * counter keeps climbing from where it was, never re-issuing a spent number.
+ */
+export interface LibraryBackup {
+  format: typeof LIBRARY_BACKUP_FORMAT;
+  version: 1;
+  exportedAt: number;
+  maps: BackupMap[];
+}
+export interface BackupMap {
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  starred?: true;
+  nextVersion: number;
+  /** Oldest first: the order a restore re-adds them in, so their new ids
+   *  climb the way the originals did and every id-ordered walk still agrees. */
+  versions: BackupVersion[];
+}
+export interface BackupVersion {
+  savedAt: number;
+  source: VersionSource;
+  version: number;
+  name?: string;
+  starred?: true;
+  thumb?: string;
+  /** The payload, byte-for-byte. */
+  json: string;
+}
+
+/** Every map, version and payload in the library, as one backup. */
+export async function exportLibrary(): Promise<LibraryBackup> {
+  const db = await openDb();
+  // One readonly transaction with its three reads issued before any await, so
+  // the stores are read as of the same moment.
+  const tx = db.transaction(STORES, 'readonly');
+  const [maps, versions, payloads] = await Promise.all([
+    reqDone<MapRow[]>(tx.objectStore('maps').getAll()),
+    reqDone<VersionMeta[]>(tx.objectStore('versions').getAll()),
+    reqDone<PayloadRow[]>(tx.objectStore('payloads').getAll()),
+  ]);
+  const jsonById = new Map(payloads.map((p) => [p.id, p.json]));
+  return {
+    format: LIBRARY_BACKUP_FORMAT,
+    version: 1,
+    exportedAt: Date.now(),
+    maps: maps.map(({ id, ...row }) => ({
+      ...row,
+      versions: versions
+        .filter((v) => v.mapId === id)
+        .sort((a, b) => a.id - b.id)
+        .flatMap(({ id: versionId, mapId: _mapId, ...v }) => {
+          // A version whose payload is gone is not one anyone can open, so it
+          // does not travel. Cannot happen through this module — the two rows
+          // are written and deleted together — only through a damaged store.
+          const json = jsonById.get(versionId);
+          return json === undefined ? [] : [{ ...v, json }];
+        }),
+    })),
+  };
+}
+
+/**
+ * Add every map in `backup` to the library, each under a freshly minted id,
+ * in one transaction: all of it lands or none of it does. Resolves with the
+ * number of maps added.
+ */
+export async function importLibrary(backup: LibraryBackup): Promise<number> {
+  const db = await openDb();
+  const tx = db.transaction(STORES, 'readwrite');
+  const maps = tx.objectStore('maps');
+  const versions = tx.objectStore('versions');
+  const payloads = tx.objectStore('payloads');
+  for (const { versions: rows, ...map } of backup.maps) {
+    const id = newMapId();
+    maps.add({ ...map, id } satisfies MapRow);
+    for (const { json, ...v } of rows) {
+      const addReq = versions.add({ ...v, mapId: id });
+      addReq.onsuccess = () => {
+        payloads.put({ id: addReq.result as number, json } satisfies PayloadRow);
+      };
+    }
+  }
+  return txDone(tx, () => backup.maps.length);
+}
+
+export type ParsedLibraryBackup =
+  | { ok: true; backup: LibraryBackup }
+  | { ok: false; error: string };
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const isBackupVersion = (v: unknown): v is BackupVersion =>
+  isRecord(v) &&
+  typeof v.json === 'string' &&
+  typeof v.savedAt === 'number' &&
+  typeof v.version === 'number' &&
+  (v.source === 'user' || v.source === 'auto');
+const isBackupMap = (m: unknown): m is BackupMap =>
+  isRecord(m) &&
+  typeof m.name === 'string' &&
+  typeof m.createdAt === 'number' &&
+  typeof m.updatedAt === 'number' &&
+  typeof m.nextVersion === 'number' &&
+  Array.isArray(m.versions) &&
+  m.versions.every(isBackupVersion);
+
+/**
+ * Text → a backup, or a refusal. The file is this module's own export, so the
+ * gate is only what keeps a hand-edited one from landing a row the dialog
+ * cannot show (a nameless map) or a counter that is not a number (the next
+ * save would mint "v41" from "4" + 1). The payload strings are not opened:
+ * that is `parse()`'s job, on the day a restored version is opened.
+ */
+export function parseLibraryBackup(text: string): ParsedLibraryBackup {
+  const parsed = parseJsonObject(text);
+  if (!parsed.ok) return parsed;
+  const obj = parsed.obj as { format?: unknown; maps?: unknown };
+  if (obj.format !== LIBRARY_BACKUP_FORMAT) {
+    return { ok: false, error: 'Not a massimo library backup file' };
+  }
+  if (!Array.isArray(obj.maps) || !obj.maps.every(isBackupMap)) {
+    return { ok: false, error: 'A map in this backup is malformed' };
+  }
+  return { ok: true, backup: obj as LibraryBackup };
 }
