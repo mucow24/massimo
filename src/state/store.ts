@@ -61,6 +61,7 @@ import {
   backfillLinesEdges,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
+  retireNearBlackTextLabelColor,
   backfillTransferDayNightColors,
   backfillDotStrokeAlign,
   backfillLineCasingDayNightColors,
@@ -406,8 +407,8 @@ if (typeof window !== 'undefined') {
  *   colors) for polygons saved before the dark-mode fields existed. Mirrors
  *   `backfillPolygonDarkColors` in `parse()`.
  * - v5 → v6: backfill text-label `color`/`darkColor` (to the theme-matching
- *   #111111 / #ffffff defaults) for labels saved before the per-label color
- *   fields existed. Mirrors `backfillTextLabelColors` in `parse()`.
+ *   TEXT_LABEL_COLOR_DEFAULT / dark defaults) for labels saved before the
+ *   per-label color fields existed. Mirrors `backfillTextLabelColors` in `parse()`.
  * - v6 → v7: convert legacy `dotShape`/`defaultDotShape` preset ids to
  *   procedural `DotStyle` objects via the pinned preset table. Mirrors
  *   `convertLegacyDotShapes` in `parse()`.
@@ -530,6 +531,14 @@ if (typeof window !== 'undefined') {
  *   with an empty palette on the way into the editor, so backing out left one
  *   behind — `dropEmptyPalettes` takes those out. `parse()` does the same at
  *   its own door, per entry, inside `sanitizePalettes`.
+ * - v30 → v31: the near-black text-label day default (#111111) retired for
+ *   pure black — it prints as ~93% K, not 100% K. Every stored label `color`
+ *   AND textLabel StyleDef prop sitting on it moves to TEXT_LABEL_COLOR_DEFAULT
+ *   together, so tagged wearers stay tagged; night halves and picked colors are
+ *   untouched. Ordered right after the v<6 backfill and BEFORE the v<10 style
+ *   rebuild + v<11 adoption, so a legacy label lands on the Default def's new
+ *   color and adopts. Gated: from v31 on, #111111 is a picked color. `parse()`
+ *   runs the same rewrite under file version < 3.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -579,6 +588,13 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
   if (v < 6 && out.textLabels) {
     const { textLabels: cleaned, changed } = backfillTextLabelColors(out.textLabels);
     if (changed) out = { ...out, textLabels: cleaned };
+  }
+  if (v < 31) {
+    // The near-black text-label default retired for pure black: stored labels
+    // and textLabel defs on #111111 move together (see the v31 note above).
+    // BEFORE the v<10 rebuild / v<11 adoption, so a legacy label matches the
+    // Default def's new color and adopts.
+    out = retireNearBlackTextLabelColor(out);
   }
   if (v < 7 && (out.stations || out.lines)) {
     // Legacy dotShape/defaultDotShape preset ids → DotStyle objects (same
@@ -1755,8 +1771,8 @@ export const useDoc = create<DocState>()(
         // Nominal: the storage above keys by map, not by this name.
         name: 'massimo-doc',
         storage: debouncedDocStorage,
-        version: 30,
-        // Version migration chain v0 → v30 lives in `migrateDoc` (above), which
+        version: 31,
+        // Version migration chain v0 → v31 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config

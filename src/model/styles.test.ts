@@ -147,7 +147,7 @@ describe('captureStyleProps', () => {
       textLabels: [makeTextLabel({ id: 'g1', fontSize: 20, weight: 700, width: 200, leading: 2 })],
     });
     expect(captureStyleProps(doc, 'textLabel', 'g1')).toEqual({
-      color: '#111111',
+      color: '#000000',
       darkColor: '#ffffff',
       fontSize: 20,
       weight: 700,
@@ -732,7 +732,7 @@ describe('saveStyleFromItem', () => {
 
   it('saving an unchanged style from an already-tagged matching item is a no-op', () => {
     const props = {
-      color: '#111111',
+      color: '#000000',
       darkColor: '#ffffff',
       fontSize: 24,
       weight: 400,

@@ -375,9 +375,14 @@ export const isAutoVAlign = (v: unknown): v is AutoVAlign =>
 export const TEXT_LABEL_WIDTH_MAX = 800;
 // Default day/night text colors for new labels. Kept as independent literals
 // (not imported from state/theme.ts — the pure model must not pull in the
-// zustand store) but chosen to match the historical theme label colors so
-// existing labels are visually unchanged once backfilled.
-export const TEXT_LABEL_COLOR_DEFAULT = '#111111';
+// zustand store) but chosen to match the theme label colors, so a label and
+// the station names beside it read as one ink.
+export const TEXT_LABEL_COLOR_DEFAULT = '#000000';
+// The day default before pure black: it matched the theme's old near-black
+// station ink and only ever arrived as a default, never picked. It prints as
+// ~93% K rather than 100% K, so stored labels and defs still sitting on it are
+// rewritten to TEXT_LABEL_COLOR_DEFAULT once (persist v31 / file version 3).
+export const LEGACY_TEXT_LABEL_COLOR = '#111111';
 export const TEXT_LABEL_DARK_COLOR_DEFAULT = '#ffffff';
 // Leading: multiplier on the default 1.2em line spacing. Slider range with a
 // detent at the neutral 1; the spinbutton accepts values above the max.

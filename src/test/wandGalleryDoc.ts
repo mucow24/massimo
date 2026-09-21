@@ -248,7 +248,7 @@ export function wandGalleryDoc(): WandGallery {
       weight: 700,
       italic: false,
       align: 'left',
-      color: '#111111',
+      color: '#000000',
       darkColor: '#ffffff',
     });
   };

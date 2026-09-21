@@ -1,6 +1,6 @@
 {
   "format": "massimo-map",
-  "version": 2,
+  "version": 3,
   "doc": {
     "name": "Wand label gallery",
     "stations": {
@@ -10924,7 +10924,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r0-hdr": {
@@ -10937,7 +10937,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r0V-hdr": {
@@ -10950,7 +10950,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r0NE-hdr": {
@@ -10963,7 +10963,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r0NW-hdr": {
@@ -10976,7 +10976,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r1-hdr": {
@@ -10989,7 +10989,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r1V-hdr": {
@@ -11002,7 +11002,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r1NE-hdr": {
@@ -11015,7 +11015,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r1NW-hdr": {
@@ -11028,7 +11028,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r2-hdr": {
@@ -11041,7 +11041,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r2V-hdr": {
@@ -11054,7 +11054,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r2NE-hdr": {
@@ -11067,7 +11067,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r2NW-hdr": {
@@ -11080,7 +11080,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r6-hdr": {
@@ -11093,7 +11093,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r6V-hdr": {
@@ -11106,7 +11106,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r6NE-hdr": {
@@ -11119,7 +11119,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r6NW-hdr": {
@@ -11132,7 +11132,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r7-hdr": {
@@ -11145,7 +11145,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r7V-hdr": {
@@ -11158,7 +11158,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r7NE-hdr": {
@@ -11171,7 +11171,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "mid-r7NW-hdr": {
@@ -11184,7 +11184,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "term-E-hdr": {
@@ -11197,7 +11197,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "term-S-hdr": {
@@ -11210,7 +11210,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "term-NE-hdr": {
@@ -11223,7 +11223,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "term-SE-hdr": {
@@ -11236,7 +11236,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "cross-hdr": {
@@ -11249,7 +11249,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "corner-hdr": {
@@ -11262,7 +11262,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       },
       "misc-hdr": {
@@ -11275,7 +11275,7 @@
         "weight": 700,
         "italic": false,
         "align": "left",
-        "color": "#111111",
+        "color": "#000000",
         "darkColor": "#ffffff"
       }
     },
@@ -11310,7 +11310,7 @@
         "name": "Default",
         "kind": "textLabel",
         "props": {
-          "color": "#111111",
+          "color": "#000000",
           "darkColor": "#ffffff",
           "fontSize": 16,
           "weight": 400,

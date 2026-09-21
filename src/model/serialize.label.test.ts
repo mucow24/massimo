@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { serialize, parse, SCHEMA_FORMAT } from './serialize';
-import { makeDoc, makeStation, makeTextLabel } from '../test/fixtures';
+import { makeDoc, makeStation, makeStyle, makeTextLabel } from '../test/fixtures';
+import type { TextLabelStyleProps } from './types';
 
 describe('text-label color serialization', () => {
   it('round-trips day/night colors distinct from each other', () => {
@@ -41,7 +42,7 @@ describe('text-label color serialization', () => {
     const result = parse(legacy);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.doc.textLabels['g1'].color).toBe('#111111');
+    expect(result.doc.textLabels['g1'].color).toBe('#000000');
     expect(result.doc.textLabels['g1'].darkColor).toBe('#ffffff');
   });
 });
@@ -215,5 +216,51 @@ describe('station label align/valign membership gate', () => {
           .autoVAlign,
       ).toBe(autoVAlign);
     }
+  });
+});
+
+// '#111111' was the built-in text-label day default until it was retired for
+// pure black (it prints as ~93% K, not 100% K). Files saved under the old
+// default carry it in every label and textLabel def; version-3 files carry it
+// only where it was picked on purpose, so the rewrite is gated on the file's
+// own version — the same gate `migrateLegacyBulletSyntax` uses.
+describe('near-black text-label default retired to pure black (file version < 3)', () => {
+  const file = (version: number, color: string) =>
+    JSON.stringify({
+      format: SCHEMA_FORMAT,
+      version,
+      doc: {
+        stations: {},
+        lines: {},
+        lineOrder: [],
+        textLabels: { g1: makeTextLabel({ id: 'g1', color, darkColor: '#ffffff' }) },
+        styles: { t: makeStyle('textLabel', 't', { props: { color } }) },
+      },
+    });
+  const load = (json: string) => {
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    return result.doc;
+  };
+
+  it('rewrites a version-2 file: stored labels and textLabel defs move together', () => {
+    const doc = load(file(2, '#111111'));
+    expect(doc.textLabels.g1.color).toBe('#000000');
+    expect((doc.styles.t.props as TextLabelStyleProps).color).toBe('#000000');
+  });
+
+  it('leaves a picked color alone', () => {
+    expect(load(file(2, '#123456')).textLabels.g1.color).toBe('#123456');
+  });
+
+  it('leaves version-3 files untouched (#111111 is a picked color there)', () => {
+    const doc = load(file(3, '#111111'));
+    expect(doc.textLabels.g1.color).toBe('#111111');
+    expect((doc.styles.t.props as TextLabelStyleProps).color).toBe('#111111');
+  });
+
+  it('writes files at version 3', () => {
+    expect(JSON.parse(serialize(makeDoc({}))).version).toBe(3);
   });
 });

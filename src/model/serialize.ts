@@ -7,6 +7,7 @@ import {
   LABEL_TRACKING_DEFAULT,
   LABEL_VALIGN_DEFAULT,
   LABEL_WEIGHT_DEFAULT,
+  LEGACY_TEXT_LABEL_COLOR,
   STATION_LABEL_STYLE_DEFAULTS,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
@@ -564,7 +565,11 @@ export const SCHEMA_FORMAT = 'massimo-map';
 //  - v1 → v2: legacy inline bullet syntax — `<X>` circle tokens become
 //    `|X|`, and literal pipe text that would newly parse as a bullet gets
 //    a backslash escape. Mirrors the persist-store v7 → v8 migration.
-export const SCHEMA_VERSION = 2;
+//  - v2 → v3: the near-black text-label day default (#111111) retired for pure
+//    black — stored label colors and textLabel def props on it move to
+//    TEXT_LABEL_COLOR_DEFAULT together (`retireNearBlackTextLabelColor`).
+//    Mirrors the persist-store v30 → v31 migration.
+export const SCHEMA_VERSION = 3;
 
 export interface SerializedFile {
   format: typeof SCHEMA_FORMAT;
@@ -938,6 +943,12 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   if (foldedPolygons.changed) merged.polygons = foldedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
   if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
+  // Version-gated rewrite: files saved under the retired near-black text-label
+  // default carry it in every label and textLabel def; from version 3 on it is
+  // a picked color. BEFORE the style sanitize + Default adoption below, so a
+  // pre-styles label lands on the Default def's new color and adopts.
+  const fileVersion = typeof file.version === 'number' ? file.version : 1;
+  if (fileVersion < 3) merged = retireNearBlackTextLabelColor(merged);
   // Fold the retired UltraLight rung (Söhne's ladder starts at 200) onto Thin
   // BEFORE anything validates a weight. `sanitizeStyles` just below drops a def
   // whose props fail `isLabelWeight` — which a stored 100 now does — and that
@@ -972,7 +983,7 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   merged = bakeLegacyLabelSettings(merged);
   // Version-gated (non-idempotent) rewrite: files saved before the pipe
   // bullet grammar carry `<X>` circle tokens and unescaped literal pipes.
-  if ((typeof file.version === 'number' ? file.version : 1) < 2) {
+  if (fileVersion < 2) {
     const migrated = migrateLegacyBulletSyntax(merged.stations, merged.textLabels);
     if (migrated.changed) {
       merged.stations = migrated.stations;
@@ -1728,8 +1739,8 @@ export function backfillLineNames(lines: Record<string, Line>): {
 }
 
 // Backfill the day/night colors for labels saved before those fields existed.
-// Old labels rendered with the theme colors (#111111 / #ffffff), so each
-// missing field is set once to the matching default; independent thereafter.
+// Old labels rendered with the theme label colors, so each missing field is
+// set once to the matching default; independent thereafter.
 export function backfillTextLabelColors(textLabels: Record<string, TextLabel>): {
   textLabels: Record<string, TextLabel>;
   changed: boolean;
@@ -1750,6 +1761,53 @@ export function backfillTextLabelColors(textLabels: Record<string, TextLabel>): 
     }
   }
   return { textLabels: next, changed };
+}
+
+// The near-black text-label day default (#111111) retired for pure black: it
+// prints as ~93% K rather than 100% K. Every stored label `color` AND textLabel
+// StyleDef prop sitting on it moves to TEXT_LABEL_COLOR_DEFAULT TOGETHER, so a
+// tagged wearer still matches its style and nothing reads as an override.
+// Night halves and any other color are untouched. Idempotent and
+// reference-preserving, but version-gated by both callers (persist v31, file
+// version 3): from there on #111111 is a color someone picked.
+export function retireNearBlackTextLabelColor<
+  T extends { textLabels?: Record<string, TextLabel>; styles?: Record<string, StyleDef> },
+>(doc: T): T {
+  const isLegacy = (c: unknown) =>
+    typeof c === 'string' && c.toLowerCase() === LEGACY_TEXT_LABEL_COLOR;
+  let out = doc;
+
+  if (out.textLabels) {
+    let changed = false;
+    const textLabels: Record<string, TextLabel> = {};
+    for (const id of Object.keys(out.textLabels)) {
+      const g = out.textLabels[id];
+      if (isLegacy(g.color)) {
+        textLabels[id] = { ...g, color: TEXT_LABEL_COLOR_DEFAULT };
+        changed = true;
+      } else {
+        textLabels[id] = g;
+      }
+    }
+    if (changed) out = { ...out, textLabels } as T;
+  }
+
+  if (out.styles) {
+    let changed = false;
+    const styles: Record<string, StyleDef> = {};
+    for (const key of Object.keys(out.styles)) {
+      const def = out.styles[key];
+      if (def?.kind === 'textLabel' && def.props && isLegacy(def.props.color)) {
+        styles[key] = { ...def, props: { ...def.props, color: TEXT_LABEL_COLOR_DEFAULT } };
+        changed = true;
+      } else {
+        styles[key] = def;
+      }
+    }
+    if (changed) out = { ...out, styles } as T;
+  }
+
+  return out;
 }
 
 // Backfill the dark-mode colors for polygons saved before those fields existed.

@@ -109,9 +109,9 @@ describe('<LabelView /> — text color follows the theme', () => {
       </svg>,
     );
 
-  it('paints text near-black in light mode', () => {
+  it('paints text pure black in light mode', () => {
     useDoc.setState({ darkMode: false });
-    expect(renderPlain().container.querySelector('text')?.getAttribute('fill')).toBe('#111111');
+    expect(renderPlain().container.querySelector('text')?.getAttribute('fill')).toBe('#000000');
   });
 
   it('paints text white in dark mode', () => {
@@ -301,7 +301,7 @@ describe('<LabelView /> — formatting tags', () => {
   it('renders <color=...> as the segment fill, leaving other runs on the label color', () => {
     const c = renderLabel(makeTextLabel({ id: 'g1', text: '<color=red>R</color>N' }));
     expect(textByContent(c, 'R').getAttribute('fill')).toBe('red');
-    expect(textByContent(c, 'N').getAttribute('fill')).toBe('#111111');
+    expect(textByContent(c, 'N').getAttribute('fill')).toBe('#000000');
   });
 
   it('draws underline and strikethrough as explicit line elements', () => {

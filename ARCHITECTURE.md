@@ -1467,7 +1467,7 @@ sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-w
 LEADING whitespace survives as the author's indent, riding the first word onto the first
 wrapped line and counting toward the wrap width, so a typed indent reads the same in both
 modes; floored at 0 by `updateTextLabel`, fractions kept), `color/
-darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
+darkColor` (day/night; **defaults DIFFER**: `#000000` / `#ffffff` for legibility — unlike a
 polygon whose dark default equals its light; backfilled on load), `colorRef?` (the pair's swatch
 ref — see "Swatch refs"), `locked?`, plus optional
 per-label `leading` (line-spacing multiplier) / `tracking` (em letter-spacing) — station labels
@@ -1786,7 +1786,9 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
    see the `hadStyles` gotcha below.
 9. `backfillPolygonDarkColors`, then `foldPolygonFillOpacity` (legacy polygon `fillOpacity` → the
    alpha of `fill`/`darkFill`; **after** the dark-color backfill so `darkFill` exists to fold),
-   then `backfillTextLabelColors`.
+   then `backfillTextLabelColors`, then `retireNearBlackTextLabelColor` — gated on the **file's
+   own** `version < 3` (the retired near-black default `#111111` → pure black on labels and
+   textLabel defs together; from version 3 on it is a picked color).
 10. `sanitizeStyles` (validate/clamp style defs, per-kind name dedupe, id ← record key; its
     per-dot `sanitizeDotStyle` also defaults an absent `strokeAlign` to `'center'`) then
     `ensureStyleInvariants` (≥ 1 style per kind — factory Defaults injected into empty kinds —
@@ -1799,8 +1801,9 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
     idempotent, keyed off field presence) then `sanitizeTransferStyles`, then
     `bakeLegacyLabelSettings` (retired doc-level station-label settings → per-station typography +
     seed the designated default station style; idempotent, keyed off field presence).
-12. `migrateLegacyBulletSyntax` — gated on the **file's own** `version < 2` (the one version-gated,
-    non-idempotent step in Path A).
+12. `migrateLegacyBulletSyntax` — gated on the **file's own** `version < 2` (with step 9's
+    near-black rewrite, one of the two steps gated on the file version, and the only one that is
+    not idempotent).
 13. `pruneDanglingStyleRefs` — **last**, so dangling / wrong-kind `styleId` tags check against
     fully-sanitized defs. Value divergence is NOT pruned — a diverged-but-tagged item loads
     verbatim, its diff being a per-field override. The **dot slots** get the same repair: a line's
@@ -1827,7 +1830,7 @@ sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for th
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
 The zustand `persist` config: `name: 'massimo-doc'` (nominal — the custom storage keys by the
-tab's map, `docKey(tabMapId())`; see _A tab is a map_), `version: 30`, `migrate:
+tab's map, `docKey(tabMapId())`; see _A tab is a map_), `version: 31`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`, plus a **custom `merge` hook** (below). Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -1860,6 +1863,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<26`      | `backfillLineCasingDayNightColors` (the line **casing** color gained day/night halves: legacy single-color strings → `{day, night}` pairs on per-line `strokeColor` AND line StyleDef props; the `'line'` sentinel passes through, being no color at all). Lines and defs convert together, so tagged wearers stay tagged. Ordered **before** the `v<10` style hygiene, whose canonicalizer now reads the pair form — and hence before the `v<11` adoption. Path A covers this via `sanitizeLineStroke` / `sanitizeStyleProps` |
 | `v<29`      | `dropEmptyPalettes` (a palette carries at least one color: drop the ones stored without any). New… used to seed a palette into the map on the way into the editor, so every "New palette N" backed out of left an empty stub behind. Ordered **after** the `v<24` bake, whose source library may hold stubs of its own. The library store's own `v1 → v2` migration does the same to its half. **But see the `merge` hook** — the gate alone would leave today's editor free to strand one at the current version |
 | `v<30`      | name-keyed **swatch refs** arrive: `dedupeSwatchNames` (swatch names go unique within their palette — they are the ref key), then `bakeLineColorRefs` (every ref-less line sitting on a line-palette swatch hex gains an explicit `colorRef` — the one-time conversion of value-match recoloring into links, shared with the file path, where it runs unconditionally) |
+| `v<31`      | `retireNearBlackTextLabelColor` (the near-black text-label day default `#111111` retired for pure black — it prints as ~93% K, not 100% K): every stored label `color` AND textLabel StyleDef prop sitting on it moves to `TEXT_LABEL_COLOR_DEFAULT` together, so tagged wearers stay tagged; night halves and picked colors are untouched. Ordered **right after the `v<6` backfill and before the `v<10` rebuild + `v<11` adoption**, so a legacy label lands on the Default def's new color and adopts. Gated because from v31 on `#111111` is a picked color. Path A runs the same rewrite under file `version < 3` |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
@@ -4997,7 +5001,7 @@ Each is confirmed in source/tests; file pointers included.
 - **Sanitizer ordering is load-bearing** — `convertLegacyDotShapes` and `sanitizeStopDotSizes` run
   _after_ the per-line clean (a stop compares against the _sanitized_ line default).
 - **Polygon dark colors backfill to EQUAL light; text-label dark colors backfill to DIFFERENT
-  defaults** (`#111111`/`#ffffff`) — for legibility. Don't assume symmetry.
+  defaults** (`#000000`/`#ffffff`) — for legibility. Don't assume symmetry.
 - **`Polygon.closed`/`curveRadius` have no backfill** — absent is meaningful (closed/sharp), so
   legacy polygons render unchanged. The legacy `fillOpacity` percentage was folded into the
   `fill`/`darkFill` alpha and removed in the **v9** migration (`foldPolygonFillOpacity`, shared by

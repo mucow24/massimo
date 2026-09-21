@@ -16,7 +16,7 @@ test.describe('dark mode', () => {
 
     // Light defaults.
     await expect(bg).toHaveAttribute('fill', '#fafafa');
-    await expect(labelText).toHaveAttribute('fill', '#111111');
+    await expect(labelText).toHaveAttribute('fill', '#000000');
 
     await page.getByRole('button', { name: 'Toggle dark mode' }).click();
 
@@ -133,7 +133,7 @@ test.describe('interface theme', () => {
     // …but the canvas is untouched: bg rect, its host backstop, and the on-canvas
     // label all stay in the doc's (light) palette.
     await expect(bg).toHaveAttribute('fill', '#fafafa');
-    await expect(labelText).toHaveAttribute('fill', '#111111');
+    await expect(labelText).toHaveAttribute('fill', '#000000');
     await expect(host).toHaveCSS('background-color', 'rgb(250, 250, 250)');
   });
 
@@ -200,7 +200,7 @@ test.describe('canvas color', () => {
     // Dark paper under a day map: black canvas, day ink, light chrome.
     await pickPaper(page, 'Dark');
     await expect(bg).toHaveAttribute('fill', '#000000');
-    await expect(labelText).toHaveAttribute('fill', '#111111');
+    await expect(labelText).toHaveAttribute('fill', '#000000');
     await expect(app).not.toHaveAttribute('data-theme', 'dark');
 
     // Light paper under a night map: near-white canvas, night ink, dark chrome.

@@ -7,7 +7,7 @@ describe('themeColors', () => {
   it('light mode: near-white canvas, dark labels, white underlay', () => {
     const c = themeColors(false);
     expect(c.canvasBg).toBe('#fafafa');
-    expect(c.label).toBe('#111111');
+    expect(c.label).toBe('#000000');
     expect(c.underlay).toBe('#ffffff');
     expect(c.editorBg).toBe('#ffffff');
   });
@@ -50,7 +50,7 @@ describe('themeColors', () => {
       // side alone and the borrowed grid is tuned for a paper it no longer has.
       expect(c.canvasBg).toBe(themeColors(true).canvasBg);
       // The ink stays day mode — this is glare relief, not night mode.
-      expect(c.label).toBe('#111111');
+      expect(c.label).toBe('#000000');
       expect(c.underlay).toBe('#ffffff');
       expect(c.editorBg).toBe('#ffffff');
       expect(c.accent).toBe('#1a4ea8');
@@ -68,7 +68,7 @@ describe('themeColors', () => {
     it("'gray' sits between light and dark in both modes, moving only the paper", () => {
       const day = themeColors(false, 'gray');
       expect(day.canvasBg).toBe('#616161');
-      expect(day.label).toBe('#111111');
+      expect(day.label).toBe('#000000');
       expect(day.underlay).toBe('#ffffff');
       expect(day.editorBg).toBe('#ffffff');
       const night = themeColors(true, 'gray');
