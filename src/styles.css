@@ -162,7 +162,7 @@ body,
   height: 100%;
   font-family: 'Soehne', 'Massimo Symbols', 'DejaVu Sans', 'Helvetica', 'Arial', sans-serif;
   font-size: 13px;
-  color: #111;
+  color: #000;
   background: #f4f4f4;
 }
 
@@ -250,7 +250,7 @@ select {
      palette lives in src/state/theme.ts — keep --accent in sync with it. */
 
   /* Text */
-  --text: #111;
+  --text: #000;
   --text-muted: #666; /* captions, field labels, section headings */
   --text-faint: #b0b0b0; /* resting tint of the borderless icon buttons */
 
@@ -265,7 +265,7 @@ select {
   --row-hover: #f4f7fb;
   --row-selected: #e6efff;
   --input-bg: #fff;
-  --input-text: #111;
+  --input-text: #000;
 
   /* Borders */
   --border-soft: #e5e5e5;

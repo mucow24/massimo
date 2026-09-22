@@ -39,7 +39,7 @@ function renderLabel() {
 describe('<StationView /> — label color follows the theme', () => {
   it('paints the label near-black in light mode', () => {
     useDoc.setState({ darkMode: false });
-    expect(renderLabel().text.getAttribute('fill')).toBe('#111111');
+    expect(renderLabel().text.getAttribute('fill')).toBe('#000000');
   });
 
   it('paints the label white in dark mode', () => {
@@ -518,7 +518,7 @@ describe('<StationView /> — inline formatting tags in station names', () => {
   it('renders <color=...> as the run fill, leaving other runs on the label color', () => {
     const c = renderName('<color=red>R</color>N');
     expect(runByContent(c, 'R')?.getAttribute('fill')).toBe('red');
-    expect(runByContent(c, 'N')?.getAttribute('fill')).toBe('#111111'); // light-mode label
+    expect(runByContent(c, 'N')?.getAttribute('fill')).toBe('#000000'); // light-mode label
   });
 
   it('draws <u>/<s> as explicit decoration lines, tagged apart from the hover underline', () => {
@@ -906,9 +906,9 @@ describe('<StationView /> — hover underline geometry (E1)', () => {
     expect(Number(line.getAttribute('x2'))).toBeCloseTo(expX2, 5);
     expect(Number(line.getAttribute('y1'))).toBeCloseTo(expY, 5);
     expect(Number(line.getAttribute('y2'))).toBeCloseTo(expY, 5);
-    // Underline paints in the label color (light-mode near-black) at the
+    // Underline paints in the label color (light-mode pure black) at the
     // documented stroke width.
-    expect(line.getAttribute('stroke')).toBe('#111111');
+    expect(line.getAttribute('stroke')).toBe('#000000');
     expect(Number(line.getAttribute('stroke-width'))).toBe(UNDERLINE_STROKE);
   });
 });

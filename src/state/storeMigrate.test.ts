@@ -14,6 +14,7 @@ import {
   DEFAULT_STYLES,
   FACTORY_STYLE_DEFAULTS,
   TEXT_LABEL_COLOR_DEFAULT,
+  TEXT_LABEL_DEFAULTS,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from '../model/transforms';
 import {
@@ -38,6 +39,7 @@ import type {
   LineStyleProps,
   MapDoc,
   StationId,
+  TextLabelStyleProps,
   StopOrientation,
   StyleDef,
   LabelValign,
@@ -921,7 +923,7 @@ describe('migrateDoc', () => {
         name: 'Heading',
         kind: 'textLabel',
         props: {
-          color: '#111111',
+          color: '#223344',
           darkColor: '#ffffff',
           fontSize: 24,
           weight: 700,
@@ -936,7 +938,7 @@ describe('migrateDoc', () => {
         styles: Record<string, StyleDef>;
       };
       expect(out.styles.y1.props).toEqual({
-        color: '#111111',
+        color: '#223344',
         darkColor: '#ffffff',
         fontSize: 24,
         weight: 700,
@@ -1536,6 +1538,76 @@ describe('migrateDoc', () => {
     it('does not run at v30', () => {
       const dup = [{ name: 'p', swatches: palettes[0].swatches }];
       expect(migrateDoc({ palettes: dup }, 30).palettes).toEqual(dup);
+    });
+  });
+
+  describe('v30 → v31: the near-black text-label default retired to pure black', () => {
+    // '#111111' was only ever the built-in default, matched to the theme's old
+    // station-label ink — never a picked color. It prints as ~93% K rather than
+    // 100% K, so every stored label AND textLabel def sitting on it moves to
+    // '#000000' together, keeping tagged wearers on their style.
+    it('rewrites stored label day colors and textLabel def props together', () => {
+      const out = migrateDoc(
+        {
+          textLabels: {
+            g1: makeTextLabel({ id: 'g1', color: '#111111', darkColor: '#ffffff' }),
+            g2: makeTextLabel({ id: 'g2', color: '#123456', darkColor: '#111111' }),
+          },
+          styles: {
+            t: makeStyle('textLabel', 't', { props: { color: '#111111' } }),
+            poly: makeStyle('polygon', 'poly', { props: { fill: '#111111' } }),
+          },
+        },
+        30,
+      );
+      expect(out.textLabels!.g1.color).toBe('#000000');
+      // A picked day color and a NIGHT half are left alone: only the day default moved.
+      expect(out.textLabels!.g2.color).toBe('#123456');
+      expect(out.textLabels!.g2.darkColor).toBe('#111111');
+      expect((out.styles!.t.props as TextLabelStyleProps).color).toBe('#000000');
+      // A POLYGON on that hex is a fill, not the label default.
+      expect((out.styles!.poly.props as { fill: string }).fill).toBe('#111111');
+    });
+
+    it('does not run at v31 — #111111 is a picked color from here on', () => {
+      const textLabels = { g1: makeTextLabel({ id: 'g1', color: '#111111' }) };
+      expect(migrateDoc({ textLabels }, 31).textLabels!.g1.color).toBe('#111111');
+    });
+
+    it('leaves a swatch-linked slot alone — a ref is a pick, however the hex reads', () => {
+      const palettes = [
+        { name: 'p', kind: 'design' as const, swatches: [{ name: 's', color: '#111111' }] },
+      ];
+      const ref = { palette: 'p', swatch: 's' };
+      const out = migrateDoc(
+        {
+          palettes,
+          textLabels: { g1: makeTextLabel({ id: 'g1', color: '#111111', colorRef: ref }) },
+          styles: {
+            t: makeStyle('textLabel', 't', { props: { color: '#111111', colorRef: ref } }),
+          },
+        },
+        30,
+      );
+      expect(out.textLabels!.g1.color).toBe('#111111');
+      expect(out.textLabels!.g1.colorRef).toEqual(ref);
+      expect((out.styles!.t.props as TextLabelStyleProps).color).toBe('#111111');
+    });
+
+    it('runs before adoption, so a legacy label lands on the Default def and adopts', () => {
+      const legacy = (color: string) => ({
+        textLabels: {
+          g1: makeTextLabel({ id: 'g1', ...TEXT_LABEL_DEFAULTS, color, darkColor: '#ffffff' }),
+        },
+      });
+      const out = migrateDoc(legacy('#111111'), 9);
+      expect(out.textLabels!.g1.color).toBe('#000000');
+      const def = out.styleDefaults!.textLabel;
+      expect(out.textLabels!.g1.styleId).toBe(def);
+      expect((out.styles![def].props as TextLabelStyleProps).color).toBe('#000000');
+      // Any other color is no default and does not adopt: the pin above is the
+      // rewrite landing first, not adoption being generous.
+      expect(migrateDoc(legacy('#101010'), 9).textLabels!.g1.styleId).toBeUndefined();
     });
   });
 });

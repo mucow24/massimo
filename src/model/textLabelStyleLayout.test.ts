@@ -17,7 +17,7 @@ const legacyDef = (id: string, name: string, over: Partial<TextLabelStyleProps> 
     name,
     kind: 'textLabel',
     props: {
-      color: '#111111',
+      color: '#000000',
       darkColor: '#ffffff',
       fontSize: 16,
       weight: 400,

@@ -141,7 +141,7 @@ const NIGHT_ALIGN_BLUE = '#8c9cf2';
 
 const LIGHT: ThemeColors = {
   canvasBg: '#fafafa',
-  label: '#111111',
+  label: '#000000',
   selectionStroke: '#000000',
   grid: '#eeeeee',
   guide: '#b5b5b5',
@@ -158,7 +158,7 @@ const LIGHT: ThemeColors = {
   alignGuideHover: '#f0a76a',
   underlay: '#ffffff',
   editorBg: '#ffffff',
-  editorText: '#111111',
+  editorText: '#000000',
   phantomDot: '#000000',
   accent: '#1a4ea8',
   accentWash: 'rgba(26, 78, 168, 0.08)',

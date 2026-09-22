@@ -1018,7 +1018,7 @@ export interface TextLabel {
   width?: number;
   // Day/night text colors. `color` paints in light mode, `darkColor` in dark
   // mode. Unlike a polygon (whose dark color is initialized equal to its light
-  // color), a label's two defaults differ (#111111 / #ffffff) so the text stays
+  // color), a label's two defaults differ (#000000 / #ffffff) so the text stays
   // legible in both modes — matching the theme-driven color labels used before
   // these fields existed. Independent once edited. Old saves predating these
   // fields are backfilled to the defaults once on load (see serialize.ts), so
