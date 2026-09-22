@@ -416,7 +416,7 @@ if (typeof window !== 'undefined') {
  *   text-label texts — `<X>` circle tokens become `|X|`, literal pipe text
  *   gets escaped. NOT idempotent (post-migration `<X>` is intentional
  *   literal text), hence version-gated. Mirrors the file-version gate in
- *   `parse()` (SCHEMA_VERSION 2).
+ *   `parse()` (file version 2).
  * - v8 → v9: fold the legacy per-polygon `fillOpacity` (0-100 percent) into the
  *   alpha channel of `fill` AND `darkFill`, then drop the field. Idempotent, so
  *   `parse()` runs the shared `foldPolygonFillOpacity` unconditionally (no file
@@ -534,11 +534,12 @@ if (typeof window !== 'undefined') {
  * - v30 → v31: the near-black text-label day default (#111111) retired for
  *   pure black — it prints as ~93% K, not 100% K. Every stored label `color`
  *   AND textLabel StyleDef prop sitting on it moves to TEXT_LABEL_COLOR_DEFAULT
- *   together, so tagged wearers stay tagged; night halves and picked colors are
- *   untouched. Ordered right after the v<6 backfill and BEFORE the v<10 style
- *   rebuild + v<11 adoption, so a legacy label lands on the Default def's new
- *   color and adopts. Gated: from v31 on, #111111 is a picked color. `parse()`
- *   runs the same rewrite under file version < 3.
+ *   together, so tagged wearers stay tagged; night halves, picked colors and
+ *   swatch-linked slots (a ref is a pick) are untouched. Ordered right after
+ *   the v<6 backfill and BEFORE the v<10 style rebuild + v<11 adoption, so a
+ *   legacy label lands on the Default def's new color and adopts. Gated: from
+ *   v31 on, #111111 is a picked color. `parse()` runs the same rewrite under
+ *   file version < 3.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {

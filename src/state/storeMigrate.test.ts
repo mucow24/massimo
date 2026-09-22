@@ -14,6 +14,7 @@ import {
   DEFAULT_STYLES,
   FACTORY_STYLE_DEFAULTS,
   TEXT_LABEL_COLOR_DEFAULT,
+  TEXT_LABEL_DEFAULTS,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from '../model/transforms';
 import {
@@ -1571,6 +1572,42 @@ describe('migrateDoc', () => {
     it('does not run at v31 — #111111 is a picked color from here on', () => {
       const textLabels = { g1: makeTextLabel({ id: 'g1', color: '#111111' }) };
       expect(migrateDoc({ textLabels }, 31).textLabels!.g1.color).toBe('#111111');
+    });
+
+    it('leaves a swatch-linked slot alone — a ref is a pick, however the hex reads', () => {
+      const palettes = [
+        { name: 'p', kind: 'design' as const, swatches: [{ name: 's', color: '#111111' }] },
+      ];
+      const ref = { palette: 'p', swatch: 's' };
+      const out = migrateDoc(
+        {
+          palettes,
+          textLabels: { g1: makeTextLabel({ id: 'g1', color: '#111111', colorRef: ref }) },
+          styles: {
+            t: makeStyle('textLabel', 't', { props: { color: '#111111', colorRef: ref } }),
+          },
+        },
+        30,
+      );
+      expect(out.textLabels!.g1.color).toBe('#111111');
+      expect(out.textLabels!.g1.colorRef).toEqual(ref);
+      expect((out.styles!.t.props as TextLabelStyleProps).color).toBe('#111111');
+    });
+
+    it('runs before adoption, so a legacy label lands on the Default def and adopts', () => {
+      const legacy = (color: string) => ({
+        textLabels: {
+          g1: makeTextLabel({ id: 'g1', ...TEXT_LABEL_DEFAULTS, color, darkColor: '#ffffff' }),
+        },
+      });
+      const out = migrateDoc(legacy('#111111'), 9);
+      expect(out.textLabels!.g1.color).toBe('#000000');
+      const def = out.styleDefaults!.textLabel;
+      expect(out.textLabels!.g1.styleId).toBe(def);
+      expect((out.styles![def].props as TextLabelStyleProps).color).toBe('#000000');
+      // Any other color is no default and does not adopt: the pin above is the
+      // rewrite landing first, not adoption being generous.
+      expect(migrateDoc(legacy('#101010'), 9).textLabels!.g1.styleId).toBeUndefined();
     });
   });
 });

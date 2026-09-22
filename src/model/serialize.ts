@@ -1767,9 +1767,11 @@ export function backfillTextLabelColors(textLabels: Record<string, TextLabel>): 
 // prints as ~93% K rather than 100% K. Every stored label `color` AND textLabel
 // StyleDef prop sitting on it moves to TEXT_LABEL_COLOR_DEFAULT TOGETHER, so a
 // tagged wearer still matches its style and nothing reads as an override.
-// Night halves and any other color are untouched. Idempotent and
-// reference-preserving, but version-gated by both callers (persist v31, file
-// version 3): from there on #111111 is a color someone picked.
+// Night halves, any other color, and a slot linked to a swatch are untouched —
+// a ref is a pick, whatever its hex, and moving the color under it would leave
+// a drifted link nobody made. Idempotent and reference-preserving, but
+// version-gated by both callers (persist v31, file version 3): from there on
+// #111111 is a color someone picked.
 export function retireNearBlackTextLabelColor<
   T extends { textLabels?: Record<string, TextLabel>; styles?: Record<string, StyleDef> },
 >(doc: T): T {
@@ -1782,7 +1784,7 @@ export function retireNearBlackTextLabelColor<
     const textLabels: Record<string, TextLabel> = {};
     for (const id of Object.keys(out.textLabels)) {
       const g = out.textLabels[id];
-      if (isLegacy(g.color)) {
+      if (isLegacy(g.color) && g.colorRef === undefined) {
         textLabels[id] = { ...g, color: TEXT_LABEL_COLOR_DEFAULT };
         changed = true;
       } else {
@@ -1797,7 +1799,12 @@ export function retireNearBlackTextLabelColor<
     const styles: Record<string, StyleDef> = {};
     for (const key of Object.keys(out.styles)) {
       const def = out.styles[key];
-      if (def?.kind === 'textLabel' && def.props && isLegacy(def.props.color)) {
+      if (
+        def?.kind === 'textLabel' &&
+        def.props &&
+        isLegacy(def.props.color) &&
+        def.props.colorRef === undefined
+      ) {
         styles[key] = { ...def, props: { ...def.props, color: TEXT_LABEL_COLOR_DEFAULT } };
         changed = true;
       } else {

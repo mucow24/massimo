@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { serialize, parse, SCHEMA_FORMAT } from './serialize';
+import { TEXT_LABEL_DEFAULTS } from './transforms';
 import { makeDoc, makeStation, makeStyle, makeTextLabel } from '../test/fixtures';
 import type { TextLabelStyleProps } from './types';
 
@@ -262,5 +263,41 @@ describe('near-black text-label default retired to pure black (file version < 3)
 
   it('writes files at version 3', () => {
     expect(JSON.parse(serialize(makeDoc({}))).version).toBe(3);
+  });
+
+  it('leaves a swatch-linked slot alone — a ref is a pick, however the hex reads', () => {
+    const ref = { palette: 'p', swatch: 's' };
+    const raw = JSON.parse(file(2, '#111111'));
+    raw.doc.palettes = [{ name: 'p', kind: 'design', swatches: [{ name: 's', color: '#111111' }] }];
+    raw.doc.textLabels.g1.colorRef = ref;
+    raw.doc.styles.t.props.colorRef = ref;
+    const doc = load(JSON.stringify(raw));
+    expect(doc.textLabels.g1.color).toBe('#111111');
+    expect(doc.textLabels.g1.colorRef).toEqual(ref);
+    expect((doc.styles.t.props as TextLabelStyleProps).color).toBe('#111111');
+  });
+
+  it('runs before adoption, so a legacy label in a pre-styles file lands on the Default def', () => {
+    const preStyles = (color: string) =>
+      JSON.stringify({
+        format: SCHEMA_FORMAT,
+        version: 2,
+        doc: {
+          stations: {},
+          lines: {},
+          lineOrder: [],
+          textLabels: {
+            g1: makeTextLabel({ id: 'g1', ...TEXT_LABEL_DEFAULTS, color, darkColor: '#ffffff' }),
+          },
+        },
+      });
+    const doc = load(preStyles('#111111'));
+    expect(doc.textLabels.g1.color).toBe('#000000');
+    const def = doc.styleDefaults.textLabel;
+    expect(doc.textLabels.g1.styleId).toBe(def);
+    expect((doc.styles[def].props as TextLabelStyleProps).color).toBe('#000000');
+    // Any other color is no default and does not adopt: the pin above is the
+    // rewrite landing first, not adoption being generous.
+    expect(load(preStyles('#101010')).textLabels.g1.styleId).toBeUndefined();
   });
 });
