@@ -3063,6 +3063,38 @@ button.dialog-sort {
 .map-row.selected {
   background: var(--row-selected);
 }
+/* The pinned New map row. A row in shape (thumb, body, commands) so it lines
+   up with the maps under it, but the thumb-and-body half is one real button:
+   it owns the row's padding so the whole of that half is the target, and the
+   row itself hovers like a map row. `flex: none` keeps it out of the list's
+   scroll — it sits between the column head and the list. */
+.map-new-row {
+  flex: none;
+  gap: 0;
+  padding: 0 12px 0 0;
+  transition: background-color 120ms ease;
+}
+.map-new-row:hover {
+  background: var(--row-hover);
+}
+.map-new-main {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* The app-wide ring sits 1px outside; here that is the dialog's own edge. */
+.map-new-main:focus-visible {
+  outline-offset: -2px;
+}
 .dialog-row-body {
   display: flex;
   flex-direction: column;
@@ -3162,6 +3194,27 @@ button.dialog-sort {
 }
 .map-thumb-blank {
   background: var(--inset-bg);
+}
+/* The New map row's thumb: where a map shows its picture, an empty frame with
+   a plus — the same box, dashed because nothing is in it yet. It takes the
+   accent as the row is approached, the one cue that this row acts rather than
+   selects. Below .map-thumb on purpose: equal specificity, so order decides
+   whose border wins. */
+.map-thumb-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.map-new-main:hover .map-thumb-new,
+.map-new-main:focus-visible .map-thumb-new {
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 /* The hover preview: the stored capture (up to 480×360) shown at half size, so
    the card reads crisp on HiDPI, on a popover-family card. Radix's popper

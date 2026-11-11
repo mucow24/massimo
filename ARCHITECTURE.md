@@ -275,7 +275,8 @@ src/
                                 #   without dragging the panel's whole tree in behind two facts
     BrandBullet.tsx             # the wordmark: an "M" route bullet (black disc/white M; night
                                 #   inverts) — the toolbar badge, reused by the easter-egg ball
-    MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog), and the
+    MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog): a pinned
+                                #   New map row (blank, or From file…) over the maps, and the
                                 #   whole-library backup file out and in
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell;
                                 #   New… mints either kind, rows show which by their swatch SHAPE)
@@ -2071,6 +2072,9 @@ via Map → Save version and Map → Load → From library…
   map's handles are its history's own and its counter keeps climbing from where it was. The
   import is one transaction — all of it lands or none of it does. Not an export door in the
   `auditExportDoc` sense: nothing is serialized from the live doc, only stored bytes copied out.
+  The dialog's other JSON door is the New map row's **From file…** (one map, opened). Both kinds
+  of file carry a top-level `format` tag, so each door turns the other's file away by naming the
+  door that takes it, rather than as merely malformed.
 - **The pointer lives outside both** ([libraryPointer.ts](src/state/libraryPointer.ts)).
   `useLibraryPointer` holds `{ mapId, version }` — which library map this **tab** is on, and which
   version its document **came from** (not a claim about the canvas now: edit after opening v32 and
@@ -2205,7 +2209,10 @@ save wrote A's bytes into B's history.)
 
 Every path that replaces the live document — **New**, Load → JSON…, Load → From library — goes
 through both, so none can drift: auto-save the outgoing doc, become the incoming map (above), adopt
-the incoming doc.
+the incoming doc. New and the file load each have a second door in the library dialog — its pinned
+**New map** row, and that row's **From file…** — over the same Toolbar cores (`startNewMap`,
+`openMapFile`). Both cores throw before anything has moved, and each door reports it where its user
+is looking: the menu as a toast, the dialog in its own message line, as it does for a failed Open.
 
 - `adoptParsedDoc(doc, backed)`: selection resets → `loadDoc(doc)` → `clearHistory()` (which
   cancels any open history group _and_ wipes both stacks — undo must not splice two different

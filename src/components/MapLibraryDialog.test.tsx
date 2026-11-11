@@ -107,10 +107,18 @@ const M2_V9: VersionMeta = {
 const onClose = vi.fn();
 const onOpenVersion = vi.fn(async () => {});
 const onOpenDraft = vi.fn(async () => {});
+const onNewMap = vi.fn(async () => {});
+const onOpenFile = vi.fn(async (_text: string) => {});
 
 const renderDialog = () =>
   render(
-    <MapLibraryDialog onClose={onClose} onOpenVersion={onOpenVersion} onOpenDraft={onOpenDraft} />,
+    <MapLibraryDialog
+      onClose={onClose}
+      onOpenVersion={onOpenVersion}
+      onOpenDraft={onOpenDraft}
+      onNewMap={onNewMap}
+      onOpenFile={onOpenFile}
+    />,
   );
 
 /** Vouch for the live doc as saved, so "the baseline survived" and "the
@@ -160,6 +168,9 @@ beforeEach(() => {
   onClose.mockClear();
   onOpenVersion.mockClear();
   onOpenDraft.mockClear();
+  // Reset, not clear: a rejection one test installs must not greet the next.
+  onNewMap.mockReset().mockResolvedValue(undefined);
+  onOpenFile.mockReset().mockResolvedValue(undefined);
   useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
 });
 
@@ -1098,6 +1109,106 @@ describe('MapLibraryDialog', () => {
   });
 
   /**
+   * The pinned first row of the Maps column: the way into the editor that
+   * needs no saved map — a blank one from the row itself, or one from a JSON
+   * file through the row's command. Both go through the caller, which owns the
+   * document; what is pinned here is that the row is always there, and that a
+   * failure stays in the dialog.
+   */
+  describe('the New map row', () => {
+    const newMapButton = () => screen.getByRole('button', { name: /^New map/ });
+    const fileInput = () => screen.getByLabelText('Open map file');
+    const jsonFile = (body: unknown, name = 'shared.json') =>
+      new File([JSON.stringify(body)], name, { type: 'application/json' });
+    const MAP_FILE = { format: 'massimo-map', version: 2, doc: {} };
+
+    it('starts a blank map through the caller', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.click(newMapButton());
+      await waitFor(() => expect(onNewMap).toHaveBeenCalledTimes(1));
+    });
+
+    it('is offered by an empty library, beside the empty message', async () => {
+      vi.mocked(listMaps).mockResolvedValue([]);
+      renderDialog();
+      await screen.findByText('No saved maps yet.');
+      expect(newMapButton()).toBeInTheDocument();
+    });
+
+    it('is pinned: outside the scrolling list, whatever the star filter hides', async () => {
+      useLibraryPrefs.setState({ starredMapsOnly: true });
+      renderDialog();
+      await screen.findByText('No starred maps.');
+      const maps = screen.getByRole('region', { name: 'Saved maps' });
+      const row = within(maps).getByRole('button', { name: /^New map/ });
+      expect(row.closest('.dialog-list')).toBeNull();
+      // Not a map: nothing that counts or reads the map rows may pick it up.
+      expect(mapNames()).toEqual([]);
+    });
+
+    it('shows a failed New inside the dialog and keeps it mounted', async () => {
+      const user = userEvent.setup();
+      onNewMap.mockRejectedValue(new Error('QuotaExceededError'));
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.click(newMapButton());
+      expect(await screen.findByRole('alert')).toHaveTextContent('QuotaExceededError');
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('From file… hands the chosen file’s text to the caller', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      expect(screen.getByRole('button', { name: 'From file…' })).toBeInTheDocument();
+      await user.upload(fileInput(), jsonFile(MAP_FILE));
+      await waitFor(() => expect(onOpenFile).toHaveBeenCalledWith(JSON.stringify(MAP_FILE)));
+    });
+
+    it('shows a file the caller refused inside the dialog', async () => {
+      const user = userEvent.setup();
+      onOpenFile.mockRejectedValue(new Error('Missing `doc` field'));
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.upload(fileInput(), jsonFile({ format: 'massimo-map' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Missing `doc` field');
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a map file that cannot be read', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      const unreadable = jsonFile(MAP_FILE);
+      Object.defineProperty(unreadable, 'text', {
+        value: () => Promise.reject(new Error('NotReadableError')),
+      });
+      await user.upload(fileInput(), unreadable);
+      expect(await screen.findByRole('alert')).toHaveTextContent(/could not be read/i);
+      expect(onOpenFile).not.toHaveBeenCalled();
+    });
+
+    // The other half of the two-doors pairing (see 'library backup' below): a
+    // backup picked here would otherwise fail as "Not a Massimo map file".
+    it('sends a library backup to Import backup… instead of opening it', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.upload(
+        fileInput(),
+        jsonFile({ format: 'massimo-library-backup', version: 1, maps: [] }, 'library.json'),
+      );
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('“library.json” is a library backup');
+      expect(alert).toHaveTextContent('Import backup…');
+      expect(onOpenFile).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
    * The whole library out to one JSON file, and back in as new maps. Both
    * commands sit in the Versions head beside its star filter; the storage
    * halves are the library's own (`exportLibrary` / `importLibrary`), so what
@@ -1171,9 +1282,26 @@ describe('MapLibraryDialog', () => {
       const user = userEvent.setup();
       renderDialog();
       await screen.findByText('Canal Line');
-      await user.upload(importInput(), backupFile({ format: 'massimo-map', version: 2 }));
+      await user.upload(importInput(), backupFile({ format: 'massimo-palette', version: 1 }));
       expect(await screen.findByRole('alert')).toHaveTextContent('Not a massimo library backup');
       expect(importLibrary).not.toHaveBeenCalled();
+    });
+
+    // The dialog has two JSON doors. A single map picked at this one is the
+    // likeliest wrong file there is, so the refusal names the door that takes it.
+    it('sends a single map file to From file… instead of a bare refusal', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.upload(
+        importInput(),
+        backupFile({ format: 'massimo-map', version: 2, doc: {} }, 'shared.json'),
+      );
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('“shared.json” is a single map');
+      expect(alert).toHaveTextContent('From file…');
+      expect(importLibrary).not.toHaveBeenCalled();
+      expect(onOpenFile).not.toHaveBeenCalled();
     });
 
     it('surfaces a backup file that cannot be read', async () => {
