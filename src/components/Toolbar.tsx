@@ -467,22 +467,30 @@ export function Toolbar() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  /** New = a different document, which is exactly when clearing undo is right. */
+  /**
+   * New = a different document, which is exactly when clearing undo is right.
+   *
+   * THROWS before anything is wiped: the auto-save IS the backstop for a
+   * non-undoable wipe, so if it failed there is nothing to fall back to. Each
+   * door reports that where its user is looking — the menu as a toast, the
+   * library dialog in its own message line.
+   */
+  const startNewMap = async (): Promise<void> => {
+    await autoSaveCurrent();
+    // A fresh map: an id of its own to save under (and to be, in the URL),
+    // but nothing saved under it yet, so no version to show until the first
+    // save. The tab becomes it BEFORE the wipe, so the empty doc's first
+    // write lands in its own slot.
+    await becomeMap(newMapId());
+    adoptParsedDoc(DEFAULT_DOC, false);
+  };
+
   const onNew = async () => {
     try {
-      await autoSaveCurrent();
-      // A fresh map: an id of its own to save under (and to be, in the URL),
-      // but nothing saved under it yet, so no version to show until the first
-      // save. The tab becomes it BEFORE the wipe, so the empty doc's first
-      // write lands in its own slot.
-      await becomeMap(newMapId());
+      await startNewMap();
     } catch (err) {
-      // The auto-save IS the backstop for a non-undoable wipe. If it failed,
-      // there is nothing to fall back to — so don't wipe.
       pushToast('error', errorText(err, 'Could not save to the library.'));
-      return;
     }
-    adoptParsedDoc(DEFAULT_DOC, false);
   };
 
   /**
@@ -581,6 +589,12 @@ export function Toolbar() {
     setLibraryOpen(false);
   };
 
+  /** The dialog's New map row. Throws for the dialog to show, like onOpenVersion. */
+  const onNewMapFromLibrary = async () => {
+    await startNewMap();
+    setLibraryOpen(false);
+  };
+
   // Export the rendered map as an image. All three share the canvas snapshot,
   // the active theme's background, and the name-stamped basename; failures
   // surface as a status toast.
@@ -614,6 +628,28 @@ export function Toolbar() {
 
   const onLoadClick = () => fileInputRef.current?.click();
 
+  /**
+   * Open a map file's text over the live doc, as a new map. THROWS with a
+   * message worth showing, and before anything has moved — each door (the
+   * Load menu, the library dialog's New map row) reports it in its own place.
+   */
+  const openMapFile = async (text: string): Promise<void> => {
+    // Custom palettes (localStorage) let a loaded map keep its custom active ids
+    // instead of dropping them as unknown.
+    const result = parse(text, useCustomPalettes.getState().palettes);
+    if (!result.ok) throw new Error(result.error);
+    // After the parse, so an unreadable file writes nothing; before the adopt,
+    // so a storage failure costs the load, not the document.
+    await autoSaveCurrent();
+    // A file is not a library map: it gets a fresh identity, so saving it
+    // makes a NEW map, the same way re-uploading a downloaded doc gives you
+    // a new doc. No version — the pill has nothing true to show until that
+    // first save.
+    await becomeMap(newMapId());
+    // It adopts as unsaved: Save stays armed to import it.
+    adoptParsedDoc(result.doc, false);
+  };
+
   const onFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file
@@ -630,29 +666,17 @@ export function Toolbar() {
       pushToast('error', errorText(err, 'Could not read that file.'));
       return;
     }
-    // Custom palettes (localStorage) let a loaded map keep its custom active ids
-    // instead of dropping them as unknown.
-    const result = parse(text, useCustomPalettes.getState().palettes);
-    if (!result.ok) {
-      pushToast('error', result.error);
-      return;
-    }
-    // After the parse, so a cancelled picker or an unreadable file writes
-    // nothing; before the adopt, so a storage failure costs the load, not the
-    // document.
     try {
-      await autoSaveCurrent();
-      // A file is not a library map: it gets a fresh identity, so saving it
-      // makes a NEW map, the same way re-uploading a downloaded doc gives you
-      // a new doc. No version — the pill has nothing true to show until that
-      // first save.
-      await becomeMap(newMapId());
+      await openMapFile(text);
     } catch (err) {
       pushToast('error', errorText(err, 'Could not save the current map to the library.'));
-      return;
     }
-    // It adopts as unsaved: Save stays armed to import it.
-    adoptParsedDoc(result.doc, false);
+  };
+
+  /** The dialog's New map row ▸ From file…. Throws for the dialog to show. */
+  const onOpenFileFromLibrary = async (text: string) => {
+    await openMapFile(text);
+    setLibraryOpen(false);
   };
 
   // Add → Image…: read the file (svg text, or png/jpeg bytes), take its
@@ -890,6 +914,8 @@ export function Toolbar() {
           onClose={() => setLibraryOpen(false)}
           onOpenVersion={onOpenVersion}
           onOpenDraft={onOpenDraft}
+          onNewMap={onNewMapFromLibrary}
+          onOpenFile={onOpenFileFromLibrary}
         />
       )}
       {palettesOpen && <PalettesDialog onClose={() => setPalettesOpen(false)} />}

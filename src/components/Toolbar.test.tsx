@@ -978,6 +978,117 @@ describe('Toolbar — Load from library', () => {
   });
 });
 
+/**
+ * The library dialog's pinned New map row: a blank map, or one from a JSON
+ * file, started from inside the dialog. Same cores as Map ▸ New and Map ▸ Load
+ * ▸ JSON… — what differs, and what is pinned here, is where the outcome shows:
+ * success closes the library onto the new map, failure stays in the dialog's
+ * own message line (a toast would land behind the backdrop).
+ */
+describe('Toolbar — the library’s New map row', () => {
+  const seedOutgoing = () => {
+    useLibraryPointer.setState({ mapId: 'other-map', version: 9 });
+    useDoc.setState({
+      ...useDoc.getState(),
+      name: 'Outgoing',
+      lines: { L9: makeLine({ id: 'L9' as LineId, stations: ['S9'] as StationId[] }) },
+      lineOrder: ['L9' as LineId],
+      stations: { S9: stationWithStop('S9' as StationId, 'L9' as LineId, { x: 0, y: 0 }) },
+    });
+  };
+
+  const openLibrary = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Map' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Load' }));
+    // The leaf flyout is hover-driven; see clickOpen above.
+    fireEvent.click(screen.getByRole('menuitem', { name: 'From library…' }));
+    await screen.findByRole('dialog');
+  };
+
+  const mapFile = () =>
+    new File(
+      [
+        serialize(
+          makeDoc({
+            name: 'From File',
+            stations: [makeStation({ id: 'fromfile', stops: [makeStop('L1')] })],
+            lines: [makeLine({ id: 'L1', stations: ['fromfile'] })],
+          }),
+        ),
+      ],
+      'shared.json',
+      { type: 'application/json' },
+    );
+
+  it('New map auto-saves the outgoing doc, starts a blank map, and closes the library', async () => {
+    const user = userEvent.setup();
+    seedOutgoing();
+    renderToolbar();
+    await openLibrary(user);
+    await user.click(screen.getByRole('button', { name: /^New map/ }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveVersion).mock.calls[0][0]).toBe('other-map');
+    expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('auto');
+    expect(Object.keys(useDoc.getState().stations)).toHaveLength(0);
+    expect(useDoc.getState().name).toBe(DEFAULT_DOC.name);
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'minted-1', version: null });
+    expect(toastsNow()).toHaveLength(0);
+  });
+
+  it('New map keeps the doc and says why inside the library when the auto-save fails', async () => {
+    const user = userEvent.setup();
+    seedOutgoing();
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
+    renderToolbar();
+    await openLibrary(user);
+    await user.click(screen.getByRole('button', { name: /^New map/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('QuotaExceededError');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(toastsNow()).toHaveLength(0);
+    // No save, no wipe — and the doc keeps its identity.
+    expect(useDoc.getState().name).toBe('Outgoing');
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'other-map', version: 9 });
+  });
+
+  it('From file… opens the file as a new unsaved map and closes the library', async () => {
+    const user = userEvent.setup();
+    seedOutgoing();
+    renderToolbar();
+    await openLibrary(user);
+    await user.upload(screen.getByLabelText('Open map file'), mapFile());
+
+    await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    // The outgoing doc was checkpointed under its own map first.
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveVersion).mock.calls[0][0]).toBe('other-map');
+    // A file is not a library map: fresh identity, no version, Save armed.
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'minted-1', version: null });
+    expect(statusNow()).toBe('unsaved');
+    expect(toastsNow()).toHaveLength(0);
+  });
+
+  it('From file… reports a file that fails to parse inside the library, moving nothing', async () => {
+    const user = userEvent.setup();
+    seedOutgoing();
+    renderToolbar();
+    await openLibrary(user);
+    const bad = new File(['{"format":"massimo-map"}'], 'broken.json', {
+      type: 'application/json',
+    });
+    await user.upload(screen.getByLabelText('Open map file'), bad);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Missing `doc` field');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(toastsNow()).toHaveLength(0);
+    expect(saveVersion).not.toHaveBeenCalled();
+    expect(useDoc.getState().name).toBe('Outgoing');
+  });
+});
+
 describe('Toolbar — map library', () => {
   // A doc whose work is entirely lines: no stations, no labels, nothing the
   // camera hull looks at. This is the shape that a contentBounds-based gate

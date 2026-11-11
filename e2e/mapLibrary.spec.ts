@@ -195,6 +195,28 @@ test('New arms an unsaved (blue) dot, and saving the fresh map clears it', async
   await expect(page.locator('.map-version-pill')).toHaveText('v1');
 });
 
+/**
+ * The first-run path, which only a real boot shows: main.tsx answers a bare URL
+ * with the library open over an empty canvas, and jsdom never runs main.tsx.
+ * An empty library has no map to open, so the pinned New map row is the way
+ * through it — into an editor on a map of its own, reading as any New does.
+ */
+test('a bare URL boots into the library, and New map is the way into the editor', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const library = page.getByRole('dialog', { name: 'Map library' });
+  await expect(library).toBeVisible();
+  await expect(library.getByText('No saved maps yet.')).toBeVisible();
+  await library.getByRole('button', { name: 'New map' }).click();
+  await expect(library).toBeHidden();
+  await expect(page).toHaveURL(/#map=.+/);
+  await expect(saveDot(page)).toHaveAttribute('data-status', 'unsaved');
+  // Nothing was deposited on the way in: the library is as empty as it was.
+  await openLibrary(page);
+  await expect(library.getByText('No saved maps yet.')).toBeVisible();
+});
+
 // Three legs. "Save twice → New → a third tagged auto" is self-contradictory
 // twice over now: the second save is greyed out (the doc is clean), and New
 // auto-saves nothing that is byte-identical to a version already in the library.

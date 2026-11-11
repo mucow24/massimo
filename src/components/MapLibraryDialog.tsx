@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as HoverCard from '@radix-ui/react-hover-card';
 import * as Toggle from '@radix-ui/react-toggle';
-import { Cross2Icon, ExternalLinkIcon, StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
+import {
+  Cross2Icon,
+  ExternalLinkIcon,
+  PlusIcon,
+  StarIcon,
+  StarFilledIcon,
+} from '@radix-ui/react-icons';
 import {
   deleteMap,
   deleteVersion,
@@ -18,6 +24,7 @@ import {
   setVersionStarred,
   sortMaps,
   isMapSort,
+  LIBRARY_BACKUP_FORMAT,
   MAP_SORTS,
   type LibraryBackup,
   type MapSort,
@@ -38,6 +45,8 @@ import {
 } from '../state/mapKeys';
 import { DialogSortSelect } from './dialogRow';
 import { downloadBlob } from '../export/exportCanvas';
+import { SCHEMA_FORMAT } from '../model/serialize';
+import { parseJsonObject } from '../util/json';
 
 interface Props {
   onClose: () => void;
@@ -45,10 +54,25 @@ interface Props {
   onOpenVersion: (version: VersionMeta) => Promise<void>;
   /** Become a map that has a working copy but no library row. Same contract. */
   onOpenDraft: (mapId: string) => Promise<void>;
+  /** Start a blank map in place of the live doc. Same contract. */
+  onNewMap: () => Promise<void>;
+  /** Open a map file's text as a new map in place of the live doc. Same contract. */
+  onOpenFile: (text: string) => Promise<void>;
 }
 
 const when = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/**
+ * A file's top-level `format` tag, or undefined when it has none. The dialog
+ * has two JSON doors — a single map, a whole-library backup — and both kinds
+ * of file carry the tag, so each door can name the other when handed its file
+ * instead of refusing it as merely malformed.
+ */
+const fileFormat = (text: string): unknown => {
+  const parsed = parseJsonObject(text);
+  return parsed.ok ? (parsed.obj as { format?: unknown }).format : undefined;
+};
 
 // The picker's wording, one entry per MAP_SORTS rung. Being a Record over the
 // union is the exhaustiveness guard: a mode added to MapSort fails to compile
@@ -210,7 +234,10 @@ function RenameField({
  * The library manager: maps on the left, the selected map's versions on the
  * right. Reached from Load → From library…, and the only place maps are renamed
  * or deleted — you never have to open a map to throw it away. A click on a map
- * row shows its versions; a double-click opens the newest one outright.
+ * row shows its versions; a double-click opens the newest one outright. It is
+ * also what a bare URL boots into, so the Maps column opens on a pinned New map
+ * row — a blank map, or one from a JSON file — for a library with nothing in
+ * it yet to open.
  *
  * A Radix Dialog (portaled into `.app` so the design tokens reach it), which
  * owns Escape, outside-click, and the focus trap.
@@ -220,7 +247,13 @@ function RenameField({
  * flips to "Sure?" in place. Not a modal on a modal — there is no confirmation
  * dialog anywhere in this app.
  */
-export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props) {
+export function MapLibraryDialog({
+  onClose,
+  onOpenVersion,
+  onOpenDraft,
+  onNewMap,
+  onOpenFile,
+}: Props) {
   // null means "still loading" — distinct from [], which means "no maps yet".
   // Collapsing the two flashes "No saved maps" on every open.
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
@@ -469,6 +502,46 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
     }
   };
 
+  const onNewMapRow = async () => {
+    setError(null);
+    try {
+      await onNewMap();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start a new map.');
+    }
+  };
+
+  const mapFileInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * The New map row's "From file…": one map's JSON, opened as a new map. The
+   * dialog only reads the text and turns a library backup away to its own
+   * door; what a map file IS, and what opening one does to the live doc, are
+   * the caller's.
+   */
+  const onMapFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!f) return;
+    setError(null);
+    let text: string;
+    try {
+      text = await f.text();
+    } catch {
+      setError(`“${f.name}” could not be read.`);
+      return;
+    }
+    if (fileFormat(text) === LIBRARY_BACKUP_FORMAT) {
+      setError(`“${f.name}” is a library backup — use Import backup… to restore it.`);
+      return;
+    }
+    try {
+      await onOpenFile(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open that file.');
+    }
+  };
+
   /**
    * The whole library out to one file — every map row, its versions and their
    * payloads, verbatim. Not an export door in the `auditExportDoc` sense:
@@ -509,6 +582,10 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
       text = await f.text();
     } catch {
       setError(`“${f.name}” could not be read.`);
+      return;
+    }
+    if (fileFormat(text) === SCHEMA_FORMAT) {
+      setError(`“${f.name}” is a single map — use From file… on the New map row to open it.`);
       return;
     }
     const result = parseLibraryBackup(text);
@@ -614,6 +691,40 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onOpenDraft }: Props)
                       onChange={setSort}
                       ariaLabel="Sort maps"
                       className="map-library-sort"
+                    />
+                  </div>
+                </div>
+                {/* Pinned above the list, so no scroll, sort or filter moves
+                    it: the way into the editor that needs no saved map. Shaped
+                    like the rows below (thumb, body, commands) but a button —
+                    one click starts the map, where a map row's click only
+                    selects. A map from a file is a new map too, so it is this
+                    row's command rather than a row of its own. */}
+                <div className="dialog-row map-new-row">
+                  <button type="button" className="map-new-main" onClick={() => void onNewMapRow()}>
+                    <span className="map-thumb map-thumb-new" aria-hidden="true">
+                      <PlusIcon />
+                    </span>
+                    <span className="dialog-row-body">
+                      <strong>New map</strong>
+                      <span className="dialog-row-meta">Start with a blank canvas</span>
+                    </span>
+                  </button>
+                  <div className="dialog-row-actions">
+                    <button
+                      type="button"
+                      title="Open a map’s JSON file as a new map"
+                      onClick={() => mapFileInputRef.current?.click()}
+                    >
+                      From file…
+                    </button>
+                    <input
+                      ref={mapFileInputRef}
+                      type="file"
+                      accept=".json,.massimo,application/json"
+                      aria-label="Open map file"
+                      style={{ display: 'none' }}
+                      onChange={(e) => void onMapFileChosen(e)}
                     />
                   </div>
                 </div>
